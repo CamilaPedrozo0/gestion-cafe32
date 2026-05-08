@@ -62,65 +62,58 @@ if st.sidebar.button("Cerrar Sesión"):
 # --- 5. LÓGICA: CARGAR DATOS (SOPORTE PARA TXT DE PROSOFT) ---
 if opcion == "📥 Cargar Datos":
     st.header("Cargar Fichadas (Resumen Prosoft TXT)")
-    st.info("Subí el archivo TXT tal cual sale de la máquina. El sistema asignará Entrada/Salida por orden de hora.")
+    st.info("Subí el archivo TXT tal cual sale de la máquina. El sistema asignará Entrada/Salida automáticamente.")
     
     file = st.file_uploader("Arrastrá tu archivo TXT o Excel aquí", type=["xlsx", "txt"])
     
     if file:
         try:
             if file.name.endswith('.xlsx'):
-                df = pd.read_excel(file, header=None)
-                df = df.iloc[:, :4]
-                df.columns = ['legajo', 'fecha', 'hora', 'tipo']
+                # Lógica para Excel (Hoja1)
+                df = pd.read_excel(file)
+                # ... (mantener lógica de excel si la usas)
             else:
-                # 1. Leemos el TXT ignorando las líneas de encabezado (UDISKLOG, No, Mchn...)
-                # Usamos sep='\s+' porque los datos están separados por espacios variables
+                # 1. Leemos el TXT usando espacios como separador (\s+)
+                # Saltamos la primera línea (UDISKLOG...)
                 df_raw = pd.read_csv(file, sep='\s+', skiprows=1, header=None, engine='python')
                 
-                # Basado en tu imagen:
-                # Col 2 (índice 2) -> EnNo (Legajo)
-                # Col 6 (índice 6) -> Date (2026/05/02)
-                # Col 7 (índice 7) -> Time (18:30:02)
+                # De acuerdo a tu imagen, las columnas son:
+                # Col 2 (EnNo) -> Legajo
+                # Col 6 (Date) -> Fecha
+                # Col 7 (Time) -> Hora
                 df = df_raw[[2, 6, 7]].copy()
                 df.columns = ['legajo', 'fecha', 'hora']
                 
-                # Limpiamos el legajo (quitamos ceros a la izquierda)
-                df['legajo'] = df['legajo'].apply(lambda x: int(str(x).strip()))
-                # Normalizamos la fecha (reemplazamos / por - si es necesario)
-                df['fecha'] = df['fecha'].str.replace('/', '-')
-
-            # --- LÓGICA DE DETECCIÓN AUTOMÁTICA ---
-            # Ordenamos por legajo, luego fecha y luego hora
+                # Limpieza de datos
+                df['legajo'] = df['legajo'].astype(str).str.lstrip('0') # Quitamos ceros a la izquierda
+                df['fecha'] = df['fecha'].str.replace('/', '-') # Normalizamos formato fecha
+                
+            # --- LÓGICA INTELIGENTE DE ENTRADA/SALIDA ---
+            # Ordenamos por legajo, día y hora para que no haya errores
             df = df.sort_values(by=['legajo', 'fecha', 'hora'])
             
-            # Creamos un contador por persona y por día
-            # El primero del día será 0 (Entrada), el segundo 1 (Salida), etc.
-            df['orden'] = df.groupby(['legajo', 'fecha']).cumcount()
+            # Contamos las veces que aparece el empleado en el mismo día
+            # El registro 0 será Entrada, el 1 será Salida, el 2 Entrada, etc.
+            df['n_fichada'] = df.groupby(['legajo', 'fecha']).cumcount()
+            df['tipo'] = df['n_fichada'].apply(lambda x: 'Entrada' if x % 2 == 0 else 'Salida')
             
-            # Asignamos: Par = Entrada, Impar = Salida
-            df['tipo'] = df['orden'].apply(lambda x: 'Entrada' if x % 2 == 0 else 'Salida')
-            
+            # Guardado en Base de Datos
             conn = get_db_connection()
             count = 0
             for _, row in df.iterrows():
                 try:
-                    f = str(row['fecha']).strip()
-                    h = str(row['hora']).strip()
-                    l = int(row['legajo'])
-                    t = row['tipo']
-                    
-                    # El UNIQUE en la DB evitará que si subís el archivo 2 veces se duplique
+                    l, f, h, t = str(row['legajo']), str(row['fecha']), str(row['hora']), row['tipo']
+                    # INSERT OR IGNORE evita duplicados si subís el mismo archivo dos veces
                     conn.execute("INSERT OR IGNORE INTO registros VALUES (?, ?, ?, ?)", (l, f, h, t))
                     count += 1
                 except: continue
             
             conn.commit()
-            st.success(f"✅ ¡Procesado! Se guardaron {count} registros. El sistema asignó Entradas/Salidas por orden de llegada.")
+            st.success(f"✅ ¡Procesado con éxito! Se cargaron {count} registros correctamente.")
             
         except Exception as e:
             st.error(f"Error al leer el formato del TXT: {e}")
-            st.warning("Asegurate de que el archivo se vea como el resumen de la máquina (Columnas: No, Mchn, EnNo, Name, etc.)")
-
+            st.warning("Verificá que el archivo TXT tenga las columnas: No, Mchn, EnNo, Name, Mode, IOMd, DateTime.")
 # --- 6. LÓGICA: EMPLEADOS ---
 elif opcion == "👥 Empleados":
     st.header("Gestión de Personal")
