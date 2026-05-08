@@ -59,13 +59,44 @@ if not st.session_state.auth:
 st.sidebar.title("☕ GESTIÓN CAFE32")
 opcion = st.sidebar.radio("Ir a:", ["Cargar Excel", "Empleados", "Reporte de Horas", "Calendario"])
 
-# --- MODULO: CARGAR EXCEL ---
+# --- MODULO: CARGAR DATOS (EXCEL O TXT) ---
 if opcion == "Cargar Excel":
-    st.header("📥 Cargar Archivo Prosoft C109")
-    file = st.file_uploader("Sube el Excel generado por la máquina", type=["xlsx"])
+    st.header("📥 Cargar Reporte (Excel o TXT)")
+    # Ahora permitimos ambos tipos de archivo
+    file = st.file_uploader("Sube el archivo de la máquina", type=["xlsx", "txt"])
     
     if file:
-        df = pd.read_excel(file, header=None)
+        try:
+            if file.name.endswith('.xlsx'):
+                # Si es Excel
+                df = pd.read_excel(file, header=None)
+                df = df[[0, 1, 2, 3]] # Columnas A, B, C, D
+            else:
+                # Si es TXT (asumiendo que los datos están separados por comas o espacios)
+                # Nota: Las máquinas Prosoft suelen usar formato CSV o texto plano
+                df = pd.read_csv(file, header=None, sep=None, engine='python')
+                df = df.iloc[:, :4] # Tomamos las primeras 4 columnas
+            
+            df.columns = ['legajo', 'fecha', 'hora', 'tipo']
+            
+            conn = get_connection()
+            count = 0
+            for _, row in df.iterrows():
+                try:
+                    f = str(row['fecha']).split()[0]
+                    h = str(row['hora']).strip()
+                    # Limpiamos el tipo (Entrada/Salida)
+                    t = str(row['tipo']).strip()
+                    
+                    conn.execute("INSERT OR IGNORE INTO registros VALUES (?, ?, ?, ?)", 
+                                 (int(row['legajo']), f, h, t))
+                    count += 1
+                except:
+                    continue
+            conn.commit()
+            st.success(f"✅ ¡Éxito! Se procesaron {count} registros nuevos.")
+        except Exception as e:
+            st.error(f"Error al leer el archivo: {e}")
         # Interpretamos columnas basado en la imagen: A:Legajo, B:Fecha, C:Hora, D:Tipo (Entrada/Salida)
         df = df[[0, 1, 2, 3]] 
         df.columns = ['legajo', 'fecha', 'hora', 'tipo']
