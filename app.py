@@ -59,61 +59,77 @@ if st.sidebar.button("Cerrar Sesión"):
     st.session_state.auth = False
     st.rerun()
 
-# --- 5. LÓGICA: CARGAR DATOS (SOPORTE PARA TXT DE PROSOFT) ---
+# --- 5. LÓGICA: CARGAR DATOS (EXTRACTOR UNIVERSAL PROSOFT) ---
 if opcion == "📥 Cargar Datos":
-    st.header("Cargar Fichadas (Resumen Prosoft TXT)")
-    st.info("Subí el archivo TXT tal cual sale de la máquina. El sistema asignará Entrada/Salida automáticamente.")
+    st.header("📥 Cargar Fichadas (TXT o Excel)")
+    st.info("Subí el archivo TXT de la máquina. El sistema detectará automáticamente los datos.")
     
-    file = st.file_uploader("Arrastrá tu archivo TXT o Excel aquí", type=["xlsx", "txt"])
+    file = st.file_uploader("Arrastrá tu archivo aquí", type=["xlsx", "txt"])
     
     if file:
         try:
+            registros_procesados = []
+
             if file.name.endswith('.xlsx'):
                 # Lógica para Excel (Hoja1)
-                df = pd.read_excel(file)
-                # ... (mantener lógica de excel si la usas)
+                df_excel = pd.read_excel(file, header=None)
+                for _, row in df_excel.iterrows():
+                    registros_procesados.append({
+                        'legajo': str(row[0]).strip(),
+                        'fecha': str(row[1]).split()[0].replace('/', '-'),
+                        'hora': str(row[2]).strip()
+                    })
             else:
-                # 1. Leemos el TXT usando espacios como separador (\s+)
-                # Saltamos la primera línea (UDISKLOG...)
-                df_raw = pd.read_csv(file, sep='\s+', skiprows=1, header=None, engine='python')
+                # --- LÓGICA PARA TXT (LEER LÍNEA POR LÍNEA) ---
+                stringio = file.getvalue().decode("utf-8")
+                lineas = stringio.splitlines()
                 
-                # De acuerdo a tu imagen, las columnas son:
-                # Col 2 (EnNo) -> Legajo
-                # Col 6 (Date) -> Fecha
-                # Col 7 (Time) -> Hora
-                df = df_raw[[2, 6, 7]].copy()
-                df.columns = ['legajo', 'fecha', 'hora']
+                for linea in lineas:
+                    partes = linea.split()
+                    # Buscamos líneas que tengan el formato de los datos (mínimo 8 partes)
+                    # No, Mchn, EnNo, Name, Mode, IOMd, Date, Time...
+                    if len(partes) >= 8 and partes[0].isdigit():
+                        try:
+                            legajo = partes[2].lstrip('0') # Columna EnNo (Legajo sin ceros)
+                            fecha = partes[6].replace('/', '-') # Columna Date
+                            hora = partes[7] # Columna Time
+                            
+                            registros_procesados.append({
+                                'legajo': legajo,
+                                'fecha': fecha,
+                                'hora': hora
+                            })
+                        except:
+                            continue
+
+            # Convertimos a DataFrame para procesar Entradas y Salidas
+            if registros_procesados:
+                df = pd.DataFrame(registros_procesados)
                 
-                # Limpieza de datos
-                df['legajo'] = df['legajo'].astype(str).str.lstrip('0') # Quitamos ceros a la izquierda
-                df['fecha'] = df['fecha'].str.replace('/', '-') # Normalizamos formato fecha
+                # Ordenamos por legajo, día y hora
+                df = df.sort_values(by=['legajo', 'fecha', 'hora'])
                 
-            # --- LÓGICA INTELIGENTE DE ENTRADA/SALIDA ---
-            # Ordenamos por legajo, día y hora para que no haya errores
-            df = df.sort_values(by=['legajo', 'fecha', 'hora'])
-            
-            # Contamos las veces que aparece el empleado en el mismo día
-            # El registro 0 será Entrada, el 1 será Salida, el 2 Entrada, etc.
-            df['n_fichada'] = df.groupby(['legajo', 'fecha']).cumcount()
-            df['tipo'] = df['n_fichada'].apply(lambda x: 'Entrada' if x % 2 == 0 else 'Salida')
-            
-            # Guardado en Base de Datos
-            conn = get_db_connection()
-            count = 0
-            for _, row in df.iterrows():
-                try:
-                    l, f, h, t = str(row['legajo']), str(row['fecha']), str(row['hora']), row['tipo']
-                    # INSERT OR IGNORE evita duplicados si subís el mismo archivo dos veces
-                    conn.execute("INSERT OR IGNORE INTO registros VALUES (?, ?, ?, ?)", (l, f, h, t))
-                    count += 1
-                except: continue
-            
-            conn.commit()
-            st.success(f"✅ ¡Procesado con éxito! Se cargaron {count} registros correctamente.")
-            
+                # El primero del día es Entrada, el segundo Salida, etc.
+                df['n'] = df.groupby(['legajo', 'fecha']).cumcount()
+                df['tipo'] = df['n'].apply(lambda x: 'Entrada' if x % 2 == 0 else 'Salida')
+                
+                conn = get_db_connection()
+                insertados = 0
+                for _, row in df.iterrows():
+                    try:
+                        conn.execute("INSERT OR IGNORE INTO registros VALUES (?, ?, ?, ?)", 
+                                     (row['legajo'], row['fecha'], row['hora'], row['tipo']))
+                        insertados += 1
+                    except: continue
+                
+                conn.commit()
+                st.success(f"✅ ¡Éxito! Se procesaron {insertados} registros.")
+                st.balloons()
+            else:
+                st.error("No se encontraron datos válidos en el archivo.")
+
         except Exception as e:
-            st.error(f"Error al leer el formato del TXT: {e}")
-            st.warning("Verificá que el archivo TXT tenga las columnas: No, Mchn, EnNo, Name, Mode, IOMd, DateTime.")
+            st.error(f"Hubo un problema técnico: {e}")
 # --- 6. LÓGICA: EMPLEADOS ---
 elif opcion == "👥 Empleados":
     st.header("Gestión de Personal")
