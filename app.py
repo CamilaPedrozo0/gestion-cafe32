@@ -59,42 +59,67 @@ if st.sidebar.button("Cerrar Sesión"):
     st.session_state.auth = False
     st.rerun()
 
-# --- 5. LÓGICA: CARGAR DATOS ---
+# --- 5. LÓGICA: CARGAR DATOS (SOPORTE PARA TXT DE PROSOFT) ---
 if opcion == "📥 Cargar Datos":
-    st.header("Cargar Fichadas (Excel o TXT)")
-    st.info("Subí el archivo GLG o Excel tal cual sale de la máquina Prosoft.")
+    st.header("Cargar Fichadas (Resumen Prosoft TXT)")
+    st.info("Subí el archivo TXT tal cual sale de la máquina. El sistema asignará Entrada/Salida por orden de hora.")
     
-    file = st.file_uploader("Arrastrá tu archivo aquí", type=["xlsx", "txt"])
+    file = st.file_uploader("Arrastrá tu archivo TXT o Excel aquí", type=["xlsx", "txt"])
     
     if file:
         try:
             if file.name.endswith('.xlsx'):
                 df = pd.read_excel(file, header=None)
+                df = df.iloc[:, :4]
+                df.columns = ['legajo', 'fecha', 'hora', 'tipo']
             else:
-                # El secreto: on_bad_lines='skip' ignora columnas extra y sep=None detecta el separador solo
-                df = pd.read_csv(file, header=None, sep=None, engine='python', on_bad_lines='skip')
+                # 1. Leemos el TXT ignorando las líneas de encabezado (UDISKLOG, No, Mchn...)
+                # Usamos sep='\s+' porque los datos están separados por espacios variables
+                df_raw = pd.read_csv(file, sep='\s+', skiprows=1, header=None, engine='python')
+                
+                # Basado en tu imagen:
+                # Col 2 (índice 2) -> EnNo (Legajo)
+                # Col 6 (índice 6) -> Date (2026/05/02)
+                # Col 7 (índice 7) -> Time (18:30:02)
+                df = df_raw[[2, 6, 7]].copy()
+                df.columns = ['legajo', 'fecha', 'hora']
+                
+                # Limpiamos el legajo (quitamos ceros a la izquierda)
+                df['legajo'] = df['legajo'].apply(lambda x: int(str(x).strip()))
+                # Normalizamos la fecha (reemplazamos / por - si es necesario)
+                df['fecha'] = df['fecha'].str.replace('/', '-')
+
+            # --- LÓGICA DE DETECCIÓN AUTOMÁTICA ---
+            # Ordenamos por legajo, luego fecha y luego hora
+            df = df.sort_values(by=['legajo', 'fecha', 'hora'])
             
-            # Agarramos solo las primeras 4 columnas (Legajo, Fecha, Hora, Tipo)
-            df = df.iloc[:, :4]
-            df.columns = ['legajo', 'fecha', 'hora', 'tipo']
+            # Creamos un contador por persona y por día
+            # El primero del día será 0 (Entrada), el segundo 1 (Salida), etc.
+            df['orden'] = df.groupby(['legajo', 'fecha']).cumcount()
+            
+            # Asignamos: Par = Entrada, Impar = Salida
+            df['tipo'] = df['orden'].apply(lambda x: 'Entrada' if x % 2 == 0 else 'Salida')
             
             conn = get_db_connection()
             count = 0
             for _, row in df.iterrows():
                 try:
-                    # Limpieza profunda de datos
-                    legajo = int(float(str(row['legajo']).strip()))
-                    fecha = str(row['fecha']).split()[0].strip()
-                    hora = str(row['hora']).strip()
-                    tipo = str(row['tipo']).strip()
+                    f = str(row['fecha']).strip()
+                    h = str(row['hora']).strip()
+                    l = int(row['legajo'])
+                    t = row['tipo']
                     
-                    conn.execute("INSERT OR IGNORE INTO registros VALUES (?, ?, ?, ?)", (legajo, fecha, hora, tipo))
+                    # El UNIQUE en la DB evitará que si subís el archivo 2 veces se duplique
+                    conn.execute("INSERT OR IGNORE INTO registros VALUES (?, ?, ?, ?)", (l, f, h, t))
                     count += 1
                 except: continue
+            
             conn.commit()
-            st.success(f"✅ Se cargaron {count} registros exitosamente.")
+            st.success(f"✅ ¡Procesado! Se guardaron {count} registros. El sistema asignó Entradas/Salidas por orden de llegada.")
+            
         except Exception as e:
-            st.error(f"Error procesando archivo: {e}")
+            st.error(f"Error al leer el formato del TXT: {e}")
+            st.warning("Asegurate de que el archivo se vea como el resumen de la máquina (Columnas: No, Mchn, EnNo, Name, etc.)")
 
 # --- 6. LÓGICA: EMPLEADOS ---
 elif opcion == "👥 Empleados":
