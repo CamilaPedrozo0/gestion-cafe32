@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
+import os
 
 # --- CONFIGURACIÓN E INTERFAZ LIMPIA ---
 st.set_page_config(page_title="Gestión Café 32", page_icon="☕", layout="wide")
@@ -19,8 +20,14 @@ hide_style = """
 """
 st.markdown(hide_style, unsafe_allow_html=True)
 
-# --- CONEXIÓN A BASE DE DATOS (PERMANENTE) ---
-conn = sqlite3.connect('cafe32_database.db', check_same_thread=False)
+# --- CONEXIÓN A BASE DE DATOS (PERMANENTE Y APTA PARA LA NUBE) ---
+# Si está en la nube de Streamlit, usa la carpeta temporal /tmp para evitar el OperationalError
+if os.path.exists('/tmp'):
+    db_path = '/tmp/cafe32_database.db'
+else:
+    db_path = 'cafe32_database.db'
+
+conn = sqlite3.connect(db_path, check_same_thread=False)
 c = conn.cursor()
 c.execute('CREATE TABLE IF NOT EXISTS empleados (legajo INTEGER PRIMARY KEY, nombre TEXT, puesto TEXT, email TEXT)')
 c.execute('CREATE TABLE IF NOT EXISTS reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, legajo INTEGER, fecha DATE, entrada TEXT, salida TEXT, total_segundos INTEGER)')
@@ -52,7 +59,6 @@ if not st.session_state.auth:
     st.stop()
 
 # --- BARRA LATERAL CON TU NUEVA TAZA ---
-# Aquí cargamos la imagen que guardaste como logo.png
 try:
     st.sidebar.image("logo.png", use_container_width=True)
 except:
@@ -95,13 +101,46 @@ elif menu == "👤 Base de Empleados":
     st.dataframe(pd.read_sql_query("SELECT * FROM empleados", conn), use_container_width=True)
 
 elif menu == "📤 Cargar Reporte USB":
-    st.header("Subir Datos del Reloj Prosoft")
+    st.header("Importar Datos de Reloj Prosoft")
     archivo = st.file_uploader("Sube el archivo Excel aquí", type=['xlsx'])
+    
     if archivo:
-        st.info("Archivo listo. Los datos se cruzarán con tu base de empleados.")
+        st.info("Archivo detectado. Listo para procesar.")
         if st.button("Procesar y Guardar Permanente"):
-            # Aquí iría tu lógica de procesamiento de Excel
-            st.success("Reporte procesado. Las horas se han sumado al historial de cada empleado.")
+            try:
+                df = pd.read_excel(archivo, header=None, skiprows=2, usecols='A:E')
+                df.columns = ['Legajo', 'Fecha', 'Hora', 'Estado', 'Nombre']
+                registros_cargados = 0
+                
+                for legajo, group in df.groupby('Legajo'):
+                    c.execute("SELECT legajo FROM empleados WHERE legajo=?", (int(legajo),))
+                    if c.fetchone():
+                        for fecha, dia_group in group.groupby('Fecha'):
+                            entrada = dia_group[dia_group['Estado'].str.contains('Entrada', case=False, na=False)]['Hora'].min()
+                            salida = dia_group[dia_group['Estado'].str.contains('Salida', case=False, na=False)]['Hora'].max()
+                            
+                            if pd.notnull(entrada) and pd.notnull(salida):
+                                fmt = '%H:%M:%S'
+                                t1 = datetime.strptime(str(entrada), fmt)
+                                t2 = datetime.strptime(str(salida), fmt)
+                                if t2 < t1:
+                                    t2 += timedelta(days=1)
+                                    
+                                segundos_trabajados = int((t2 - t1).total_seconds())
+                                fecha_str = pd.to_datetime(fecha).date().strftime('%Y-%m-%d')
+                                
+                                c.execute("""INSERT INTO reportes (legajo, fecha, entrada, salida, total_segundos) 
+                                             VALUES (?, ?, ?, ?, ?)""", 
+                                          (int(legajo), fecha_str, str(entrada), str(salida), segundos_trabajados))
+                                registros_cargados += 1
+                                
+                conn.commit()
+                if registros_cargados > 0:
+                    st.success(f"¡Éxito! Se procesaron y guardaron {registros_cargados} jornadas de trabajo.")
+                else:
+                    st.warning("Se leyó el archivo pero ningún número de legajo coincidía con los Empleados registrados. Recuerda cargarlos primero en la pestaña '👤 Base de Empleados'.")
+            except Exception as e:
+                st.error(f"Hubo un problema al leer la estructura del Excel: {e}")
 
 elif menu == "🔍 Historial Detallado":
     st.header("Consulta de Tiempos Exactos")
