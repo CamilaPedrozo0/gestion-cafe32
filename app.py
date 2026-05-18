@@ -15,6 +15,7 @@ hide_style = """
     footer {visibility: hidden;}
     header {visibility: hidden;}
     [data-testid="stSidebar"] {background-color: #2c3e50;}
+    /* Texto blanco para legibilidad en modo oscuro (Celular y PC) */
     .stMarkdown, p, h1, h2, h3, label {color: #ffffff !important;}
     </style>
 """
@@ -72,15 +73,16 @@ menu = st.sidebar.selectbox("Ir a:", ["📊 Resumen General", "👤 Base de Empl
 if menu == "📊 Resumen General":
     st.header("Resumen del Sistema")
     df_emp = pd.read_sql_query("SELECT * FROM empleados", conn)
-    df_rep = pd.read_sql_query("SELECT * FROM reportes", conn)
+    df_rep = pd.read_sql_query("SELECT legajo, fecha, entrada, salida FROM reportes", conn)
     
-    col1, col2 = st.columns(2)
-    col1.metric("Empleados en Base", len(df_emp))
-    total_s = df_rep['total_segundos'].sum() if not df_rep.empty else 0
-    col2.metric("Total Horas Registradas", formatear_segundos(total_s))
+    # Dejamos solo la métrica de personal activo, quitando las horas globales sumadas
+    st.metric("Personal Activo Registrado", len(df_emp))
     
-    st.subheader("Últimos Registros")
-    st.dataframe(df_rep.tail(10), use_container_width=True)
+    st.subheader("Últimos Fichajes Procesados")
+    if not df_rep.empty:
+        st.dataframe(df_rep.tail(15), use_container_width=True)
+    else:
+        st.info("Aún no hay marcas de asistencia guardadas. Sube un archivo en la pestaña de carga.")
 
 elif menu == "👤 Base de Empleados":
     st.header("Gestión de Personal")
@@ -93,7 +95,7 @@ elif menu == "👤 Base de Empleados":
             if st.form_submit_button("Guardar Empleado"):
                 c.execute("INSERT OR REPLACE INTO empleados VALUES (?,?,?,?)", (l, n, p, e))
                 conn.commit()
-                st.success(f"Empleado {n} guardado.")
+                st.success(f"Empleado {n} guardado con éxito.")
     
     st.subheader("Nómina Actual")
     st.dataframe(pd.read_sql_query("SELECT * FROM empleados", conn), use_container_width=True)
@@ -109,27 +111,21 @@ elif menu == "📤 Cargar Reporte USB":
                 df = None
                 nombre_archivo = archivo.name.lower()
                 
-                # MODO EXCEL
                 if nombre_archivo.endswith('.xlsx'):
                     df = pd.read_excel(archivo, header=None, skiprows=2, usecols='A:E')
                     df.columns = ['Legajo', 'Fecha', 'Hora', 'Estado', 'Nombre']
                     df['Legajo'] = df['Legajo'].astype(int)
                 
-                # MODO TXT ULTRA-RESISTENTE A EDICIONES
                 elif nombre_archivo.endswith('.txt'):
                     contenido = archivo.getvalue().decode("utf-8")
                     df_procesado = []
                     
-                    # Procesamos línea por línea de forma limpia
                     for linea in contenido.splitlines():
                         linea = linea.strip()
                         if not linea:
                             continue
                             
-                        # Dividimos la línea por cualquier cantidad de espacios o tabulaciones combinados
                         partes = re.split(r'\s+', linea)
-                        
-                        # Buscamos dónde está la fecha para guiarnos (ej: 2026/05/06)
                         indice_fecha = -1
                         for i, parte in enumerate(partes):
                             if '/' in parte and len(parte) >= 8:
@@ -138,14 +134,10 @@ elif menu == "📤 Cargar Reporte USB":
                                 
                         if indice_fecha != -1 and indice_fecha >= 1:
                             try:
-                                # El legajo siempre suele estar 4 columnas antes de la fecha, o en la tercera posición (índice 2)
-                                # Para asegurar precisión con tu formato, tomamos el elemento del índice 2
                                 legajo_int = int(partes[2]) 
-                                
                                 fecha_str = partes[indice_fecha].replace('/', '-')
-                                hora_str = partes[indice_fecha + 1].replace('.', '') # Limpia puntos si quedaron al final
+                                hora_str = partes[indice_fecha + 1].replace('.', '')
                                 
-                                # Validar formato básico de hora
                                 datetime.strptime(hora_str, '%H:%M:%S')
                                 
                                 df_procesado.append({
@@ -178,7 +170,6 @@ elif menu == "📤 Cargar Reporte USB":
                             
                             segundos_trabajados = int((t2 - t1).total_seconds())
                             
-                            # Si ya existe registro de este empleado para este día, se actualiza con los nuevos datos editados
                             c.execute("SELECT id FROM reportes WHERE legajo=? AND fecha=?", (int(legajo), str(fecha)))
                             existe = c.fetchone()
                             
@@ -195,11 +186,11 @@ elif menu == "📤 Cargar Reporte USB":
                                 
                     conn.commit()
                     if registros_cargados > 0:
-                        st.success(f"¡Éxito! Se procesaron {registros_cargados} jornadas de trabajo de forma correcta.")
+                        st.success(f"¡Éxito! Se procesaron {registros_cargados} jornadas de trabajo correctamente.")
                     else:
-                        st.warning("No se guardaron datos nuevos. Recuerda dar de alta los legajos en la pestaña '👤 Base de Empleados' antes de subir el reporte.")
+                        st.warning("No se guardaron datos nuevos. Verifica que los legajos existan en la base de empleados.")
                 else:
-                    st.error("No se pudo extraer información válida del archivo de texto.")
+                    st.error("No se pudo extraer información válida del archivo.")
                     
             except Exception as e:
                 st.error(f"Error general en el sistema: {e}")
@@ -211,11 +202,15 @@ elif menu == "🔍 Historial Detallado":
     f2 = st.date_input("Hasta")
     
     if st.button("Calcular Tiempo Exacto"):
-        query = f"SELECT * FROM reportes WHERE legajo={leg} AND fecha BETWEEN '{f1}' AND '{f2}'"
+        query = f"SELECT fecha, entrada, salida, total_segundos FROM reportes WHERE legajo={leg} AND fecha BETWEEN '{f1}' AND '{f2}'"
         res = pd.read_sql_query(query, conn)
         if not res.empty:
             segundos_totales = res['total_segundos'].sum()
-            st.markdown(f"### Total Trabajado: **{formatear_segundos(segundos_totales)}**")
+            
+            # Muestra el total por empleado en formato ultra exacto HH:MM:SS
+            st.markdown(f"### Total Trabajado en el período: `{formatear_segundos(segundos_totales)}`")
+            
+            # Mostramos la tabla limpia para que el jefe vea las marcas diarias
             st.table(res[['fecha', 'entrada', 'salida']])
         else:
-            st.warning("No hay registros para este legajo.")
+            st.warning("No hay registros de asistencias para este legajo en las fechas seleccionadas.")
