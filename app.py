@@ -4,6 +4,7 @@ import sqlite3
 from datetime import datetime, timedelta
 import os
 import io
+import re
 
 # --- CONFIGURACIÓN E INTERFAZ LIMPIA ---
 st.set_page_config(page_title="Gestión Café 32", page_icon="☕", layout="wide")
@@ -108,55 +109,66 @@ elif menu == "📤 Cargar Reporte USB":
                 df = None
                 nombre_archivo = archivo.name.lower()
                 
-                # MODO EXCEL (Como venía antes)
+                # MODO EXCEL
                 if nombre_archivo.endswith('.xlsx'):
                     df = pd.read_excel(archivo, header=None, skiprows=2, usecols='A:E')
                     df.columns = ['Legajo', 'Fecha', 'Hora', 'Estado', 'Nombre']
-                    # Convertir legajo a entero por seguridad
                     df['Legajo'] = df['Legajo'].astype(int)
                 
-                # MODO TXT NUEVO (Calibrado para el formato Prosoft crudo)
+                # MODO TXT ULTRA-RESISTENTE A EDICIONES
                 elif nombre_archivo.endswith('.txt'):
                     contenido = archivo.getvalue().decode("utf-8")
-                    # Separado por tabulaciones (\t)
-                    raw_df = pd.read_csv(io.StringIO(contenido), header=None, sep='\t', engine='python')
-                    
-                    # Estructuramos las columnas según tus datos reales
                     df_procesado = []
-                    for idx, row in raw_df.iterrows():
-                        try:
-                            legajo_int = int(row[2]) # Columna 000000001
-                            fecha_hora_str = str(row[6]).strip() # Columna 2026/05/01  16:35:02
+                    
+                    # Procesamos línea por línea de forma limpia
+                    for linea in contenido.splitlines():
+                        linea = linea.strip()
+                        if not linea:
+                            continue
                             
-                            # Separamos la fecha de la hora
-                            dt_obj = datetime.strptime(fecha_hora_str, '%Y/%M/%d %H:%M:%S')
-                            fecha_limpia = dt_obj.strftime('%Y-%m-%d')
-                            hora_limpia = dt_obj.strftime('%H:%M:%S')
-                            
-                            df_procesado.append({
-                                'Legajo': legajo_int,
-                                'Fecha': fecha_limpia,
-                                'Hora': hora_limpia
-                            })
-                        except:
-                            continue # Si una línea está en blanco o rota, la salta sin romper la app
+                        # Dividimos la línea por cualquier cantidad de espacios o tabulaciones combinados
+                        partes = re.split(r'\s+', linea)
+                        
+                        # Buscamos dónde está la fecha para guiarnos (ej: 2026/05/06)
+                        indice_fecha = -1
+                        for i, parte in enumerate(partes):
+                            if '/' in parte and len(parte) >= 8:
+                                indice_fecha = i
+                                break
+                                
+                        if indice_fecha != -1 and indice_fecha >= 1:
+                            try:
+                                # El legajo siempre suele estar 4 columnas antes de la fecha, o en la tercera posición (índice 2)
+                                # Para asegurar precisión con tu formato, tomamos el elemento del índice 2
+                                legajo_int = int(partes[2]) 
+                                
+                                fecha_str = partes[indice_fecha].replace('/', '-')
+                                hora_str = partes[indice_fecha + 1].replace('.', '') # Limpia puntos si quedaron al final
+                                
+                                # Validar formato básico de hora
+                                datetime.strptime(hora_str, '%H:%M:%S')
+                                
+                                df_procesado.append({
+                                    'Legajo': legajo_int,
+                                    'Fecha': fecha_str,
+                                    'Hora': hora_str
+                                })
+                            except:
+                                continue
                     
                     df = pd.DataFrame(df_procesado)
 
                 if df is not None and not df.empty:
                     registros_cargados = 0
                     
-                    # Agrupamos por empleado y fecha para buscar entradas y salidas automáticas
                     for (legajo, fecha), group in df.groupby(['Legajo', 'Fecha']):
                         c.execute("SELECT legajo FROM empleados WHERE legajo=?", (int(legajo),))
                         if c.fetchone():
-                            # Ordenamos las marcas de tiempo de ese día
                             horas_ordenadas = sorted(group['Hora'].tolist())
                             
-                            entrada = horas_ordenadas[0] # La primera del día
-                            salida = horas_ordenadas[-1] # La última del día
+                            entrada = horas_ordenadas[0]
+                            salida = horas_ordenadas[-1]
                             
-                            # Si solo fichó una vez en todo el día, no podemos calcular diferencia
                             if entrada == salida:
                                 continue 
                                 
@@ -166,24 +178,31 @@ elif menu == "📤 Cargar Reporte USB":
                             
                             segundos_trabajados = int((t2 - t1).total_seconds())
                             
-                            # Evitar duplicar la misma jornada si vuelven a subir el mismo archivo
+                            # Si ya existe registro de este empleado para este día, se actualiza con los nuevos datos editados
                             c.execute("SELECT id FROM reportes WHERE legajo=? AND fecha=?", (int(legajo), str(fecha)))
-                            if not c.fetchone():
+                            existe = c.fetchone()
+                            
+                            if existe:
+                                c.execute("""UPDATE reportes SET entrada=?, salida=?, total_segundos=? 
+                                             WHERE legajo=? AND fecha=?""",
+                                          (str(entrada), str(salida), segundos_trabajados, int(legajo), str(fecha)))
+                            else:
                                 c.execute("""INSERT INTO reportes (legajo, fecha, entrada, salida, total_segundos) 
                                              VALUES (?, ?, ?, ?, ?)""", 
                                           (int(legajo), str(fecha), str(entrada), str(salida), segundos_trabajados))
-                                registros_cargados += 1
+                            
+                            registros_cargados += 1
                                 
                     conn.commit()
                     if registros_cargados > 0:
-                        st.success(f"¡Éxito! Se procesaron {registros_cargados} jornadas de trabajo correctamente.")
+                        st.success(f"¡Éxito! Se procesaron {registros_cargados} jornadas de trabajo de forma correcta.")
                     else:
-                        st.warning("No se detectaron jornadas nuevas o los empleados no están registrados en la pestaña '👤 Base de Empleados'.")
+                        st.warning("No se guardaron datos nuevos. Recuerda dar de alta los legajos en la pestaña '👤 Base de Empleados' antes de subir el reporte.")
                 else:
-                    st.error("No se pudieron extraer datos válidos del archivo.")
+                    st.error("No se pudo extraer información válida del archivo de texto.")
                     
             except Exception as e:
-                st.error(f"Error al procesar el archivo: {e}")
+                st.error(f"Error general en el sistema: {e}")
 
 elif menu == "🔍 Historial Detallado":
     st.header("Consulta de Tiempos Exactos")
