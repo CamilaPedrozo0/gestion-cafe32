@@ -13,7 +13,6 @@ hide_style = """
     footer {visibility: hidden;}
     header {visibility: hidden;}
     [data-testid="stSidebar"] {background-color: #2c3e50;}
-    /* Texto blanco para legibilidad en modo oscuro */
     .stMarkdown, p, h1, h2, h3, label {color: #ffffff !important;}
     </style>
 """
@@ -29,8 +28,7 @@ URL_REPORTES = f"https://docs.google.com/spreadsheets/d/{ID_DE_TU_HOJA}/gviz/tq?
 def cargar_empleados():
     try:
         df = pd.read_csv(URL_EMPLEADOS)
-        # Limpiamos nombres de columnas por si acaso
-        df.columns = df.columns.str.strip().str.lower()
+        df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_')
         return df
     except:
         return pd.DataFrame(columns=['legajo', 'nombre', 'puesto', 'email'])
@@ -38,16 +36,25 @@ def cargar_empleados():
 def cargar_reportes():
     try:
         df = pd.read_csv(URL_REPORTES)
-        df.columns = df.columns.str.strip().str.lower()
+        df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_')
         return df
     except:
-        return pd.DataFrame(columns=['id', 'legajo', 'fecha', 'entrada', 'salida', 'total_segundos'])
+        return pd.DataFrame(columns=['id', 'legajo', 'fecha', 'entrada', 'salida', 'tiempo_trabajado'])
 
 def formatear_segundos(segundos):
     hrs = int(segundos // 3600)
     mins = int((segundos % 3600) // 60)
     segs = int(segundos % 60)
     return f"{hrs:02d}:{mins:02d}:{segs:02d}"
+
+def convertir_a_segundos(tiempo_str):
+    try:
+        partes = list(map(int, str(tiempo_str).split(':')))
+        if len(partes) == 3:
+            return partes[0] * 3600 + partes[1] * 60 + partes[2]
+        return 0
+    except:
+        return 0
 
 # --- LOGIN SEGURO ---
 if 'auth' not in st.session_state:
@@ -88,7 +95,6 @@ if menu == "📊 Resumen General":
     st.metric("Personal Activo Registrado", len(df_emp))
     st.subheader("Últimos Fichajes Procesados")
     if not df_rep.empty:
-        # Renombramos las columnas para que se vean lindas en pantalla
         vista_rep = df_rep.tail(15)[['legajo', 'fecha', 'entrada', 'salida']].copy()
         vista_rep.columns = ['Legajo', 'Fecha', 'Hora Entrada', 'Hora Salida']
         st.dataframe(vista_rep, use_container_width=True, hide_index=True)
@@ -146,7 +152,7 @@ elif menu == "📤 Cargar Reporte USB":
                         if indice_fecha != -1 and indice_fecha >= 1:
                             try:
                                 legajo_int = int(partes[2]) 
-                                fecha_str = partes[indice_fecha].replace('/', '-')
+                                fecha_str = pandas_fecha = partes[indice_fecha].replace('/', '-')
                                 hora_str = partes[indice_fecha + 1].replace('.', '')
                                 datetime.strptime(hora_str, '%H:%M:%S')
                                 
@@ -188,7 +194,6 @@ elif menu == "📤 Cargar Reporte USB":
                     if jornadas_calculadas:
                         st.success("¡Archivo procesado con éxito!")
                         st.subheader("Resultados listos para revisar:")
-                        # Se muestra como "Tiempo Real" con formato HH:MM:SS
                         st.dataframe(pd.DataFrame(jornadas_calculadas), use_container_width=True, hide_index=True)
                         st.caption("💡 Tip: Copiá estas filas a tu pestaña 'reportes' de Google Sheets para guardar el historial permanente.")
                     else:
@@ -213,8 +218,15 @@ elif menu == "🔍 Historial Detallado":
             res = df_rep[(df_rep['legajo'] == leg) & (df_rep['fecha'] >= f1) & (df_rep['fecha'] <= f2)]
             
             if not res.empty:
-                segundos_totales = res['total_segundos'].sum()
-                # Cambiado el texto a algo mucho más limpio
+                # Sumamos el tiempo interpretando las horas cargadas en formato texto o segundos
+                segundos_totales = 0
+                for t in res['tiempo_trabajado']:
+                    if ':' in str(t):
+                        segundos_totales += convertir_a_segundos(t)
+                    else:
+                        try: segundos_totales += int(t)
+                        except: pass
+                        
                 st.markdown(f"### Tiempo total cumplido: `{formatear_segundos(segundos_totales)}`")
                 
                 vista_final = res[['fecha', 'entrada', 'salida']].copy()
