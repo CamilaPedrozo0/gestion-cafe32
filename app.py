@@ -7,37 +7,39 @@ import re
 # --- CONFIGURACIÓN E INTERFAZ LIMPIA ---
 st.set_page_config(page_title="Gestión Café 32", page_icon="☕", layout="wide")
 
-# Forzamos el modo oscuro real controlando los fondos y textos por completo
+# Forzamos que se vea la barra lateral, el fondo oscuro y letras blancas legibles
 hide_style = """
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Fondo principal oscuro y contenedor de la app */
+    /* Forzar que la barra lateral SIEMPRE resalte en oscuro */
+    [data-testid="stSidebar"] {
+        background-color: #1c2331 !important;
+        min-width: 260px !important;
+    }
+    
+    /* Fondo general de la aplicación */
     .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
         background-color: #0e1117 !important;
     }
     
-    /* Fondo de la barra lateral aún más oscuro */
-    [data-testid="stSidebar"] {
-        background-color: #1c2331 !important;
-    }
-    
-    /* Forzar todos los textos, títulos, párrafos y etiquetas a color blanco/claro */
-    .stMarkdown, p, h1, h2, h3, h4, h5, h6, label, span, div {
-        color: #f8fafc !important;
-    }
-    
-    /* Ajuste de color para los textos dentro de los botones y selectores */
-    .stButton>button, div[data-baseweb="select"] * {
-        color: #000000 !important; /* Texto oscuro dentro de botones/listas para que se lea al hacer clic */
-    }
-    
-    /* Inputs de texto (Usuario y Contraseña) con fondo visible */
-    input {
-        background-color: #1e293b !important;
+    /* Color blanco obligatorio para TODOS los textos y títulos de la app */
+    .stMarkdown, p, h1, h2, h3, h4, h5, h6, label, span, div, .stMetric * {
         color: #ffffff !important;
+    }
+    
+    /* Estilo especial para que los textos dentro de las listas desplegables (Menú) se lean bien */
+    div[data-baseweb="select"] * {
+        color: #000000 !important;
+    }
+    
+    /* Botones con letras oscuras para que contrasten sobre el fondo gris claro del botón */
+    .stButton>button {
+        color: #000000 !important;
+        background-color: #f0f2f6 !important;
+        font-weight: bold;
     }
     </style>
 """
@@ -62,7 +64,7 @@ FERIADOS_2026 = {
     date(2026, 5, 25): "Día de la Revolución de Mayo",
     date(2026, 6, 20): "Paso a la Inmortalidad del Gral. Manuel Belgrano",
     date(2026, 7, 9): "Día de la Declaración de la Independencia",
-    date(2026, 8, 17): "Paso a la Inmortalidad del Gral. José de San Martín",
+    date(2026, 8, 17): "Paso a la Inmilitaridad del Gral. José de San Martín",
     date(2026, 10, 12): "Día de la Diversidad Cultural",
     date(2026, 11, 20): "Día de la Soberanía Nacional",
     date(2026, 12, 8): "Inmaculada Concepción de María",
@@ -132,12 +134,7 @@ if not st.session_state.auth:
     st.stop()
 
 # --- BARRA LATERAL ---
-try:
-    st.sidebar.image("logo.png", use_container_width=True)
-except:
-    st.sidebar.markdown("<h1 style='text-align: center;'>☕</h1>", unsafe_allow_html=True)
-
-st.sidebar.markdown("<h2 style='text-align: center; color: white;'>Café 32</h2>", unsafe_allow_html=True)
+st.sidebar.markdown("<h2 style='text-align: center; color: white;'>☕ Café 32</h2>", unsafe_allow_html=True)
 st.sidebar.markdown("---")
 
 menu = st.sidebar.selectbox("Ir a:", ["📊 Resumen General", "📅 Calendario de Turnos", "👤 Base de Empleados", "📤 Cargar Reporte USB", "🔍 Historial Detallado"])
