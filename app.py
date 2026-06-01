@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
 from datetime import datetime, timedelta
-import os
 import io
 import re
 
@@ -15,23 +13,35 @@ hide_style = """
     footer {visibility: hidden;}
     header {visibility: hidden;}
     [data-testid="stSidebar"] {background-color: #2c3e50;}
-    /* Texto blanco para legibilidad en modo oscuro (Celular y PC) */
+    /* Texto blanco para legibilidad en modo oscuro */
     .stMarkdown, p, h1, h2, h3, label {color: #ffffff !important;}
     </style>
 """
 st.markdown(hide_style, unsafe_allow_html=True)
 
-# --- CONEXIÓN A BASE DE DATOS (NUBE) ---
-if os.path.exists('/tmp'):
-    db_path = '/tmp/cafe32_database.db'
-else:
-    db_path = 'cafe32_database.db'
+# --- CONEXIÓN COMPARTIDA A GOOGLE SHEETS ---
+# COLOCÁ ACÁ TU ID LARGO DE GOOGLE SHEETS:
+ID_DE_TU_HOJA = "TU_ID_AQUÍ" 
 
-conn = sqlite3.connect(db_path, check_same_thread=False)
-c = conn.cursor()
-c.execute('CREATE TABLE IF NOT EXISTS empleados (legajo INTEGER PRIMARY KEY, nombre TEXT, puesto TEXT, email TEXT)')
-c.execute('CREATE TABLE IF NOT EXISTS reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, legajo INTEGER, fecha DATE, entrada TEXT, salida TEXT, total_segundos INTEGER)')
-conn.commit()
+URL_EMPLEADOS = f"https://docs.google.com/spreadsheets/d/{ID_DE_TU_HOJA}/gviz/tq?tqx=out:csv&sheet=empleados"
+URL_REPORTES = f"https://docs.google.com/spreadsheets/d/{ID_DE_TU_HOJA}/gviz/tq?tqx=out:csv&sheet=reportes"
+
+def cargar_empleados():
+    try:
+        df = pd.read_csv(URL_EMPLEADOS)
+        # Limpiamos nombres de columnas por si acaso
+        df.columns = df.columns.str.strip().str.lower()
+        return df
+    except:
+        return pd.DataFrame(columns=['legajo', 'nombre', 'puesto', 'email'])
+
+def cargar_reportes():
+    try:
+        df = pd.read_csv(URL_REPORTES)
+        df.columns = df.columns.str.strip().str.lower()
+        return df
+    except:
+        return pd.DataFrame(columns=['id', 'legajo', 'fecha', 'entrada', 'salida', 'total_segundos'])
 
 def formatear_segundos(segundos):
     hrs = int(segundos // 3600)
@@ -72,41 +82,42 @@ menu = st.sidebar.selectbox("Ir a:", ["📊 Resumen General", "👤 Base de Empl
 
 if menu == "📊 Resumen General":
     st.header("Resumen del Sistema")
-    df_emp = pd.read_sql_query("SELECT * FROM empleados", conn)
-    df_rep = pd.read_sql_query("SELECT legajo, fecha, entrada, salida FROM reportes", conn)
+    df_emp = cargar_empleados()
+    df_rep = cargar_reportes()
     
-    # Dejamos solo la métrica de personal activo, quitando las horas globales sumadas
     st.metric("Personal Activo Registrado", len(df_emp))
-    
     st.subheader("Últimos Fichajes Procesados")
     if not df_rep.empty:
-        st.dataframe(df_rep.tail(15), use_container_width=True)
+        # Renombramos las columnas para que se vean lindas en pantalla
+        vista_rep = df_rep.tail(15)[['legajo', 'fecha', 'entrada', 'salida']].copy()
+        vista_rep.columns = ['Legajo', 'Fecha', 'Hora Entrada', 'Hora Salida']
+        st.dataframe(vista_rep, use_container_width=True, hide_index=True)
     else:
-        st.info("Aún no hay marcas de asistencia guardadas. Sube un archivo en la pestaña de carga.")
+        st.info("Aún no hay marcas de asistencia guardadas.")
 
 elif menu == "👤 Base de Empleados":
     st.header("Gestión de Personal")
-    with st.expander("➕ Agregar Nuevo Empleado"):
-        with st.form("nuevo_emp"):
-            l = st.number_input("Número de Legajo (según Prosoft)", min_value=1, step=1)
-            n = st.text_input("Nombre completo")
-            p = st.text_input("Puesto / Función")
-            e = st.text_input("Correo electrónico")
-            if st.form_submit_button("Guardar Empleado"):
-                c.execute("INSERT OR REPLACE INTO empleados VALUES (?,?,?,?)", (l, n, p, e))
-                conn.commit()
-                st.success(f"Empleado {n} guardado con éxito.")
+    df_emp = cargar_empleados()
     
-    st.subheader("Nómina Actual")
-    st.dataframe(pd.read_sql_query("SELECT * FROM empleados", conn), use_container_width=True)
+    st.info("💡 Recordá que para que no se borren nunca, los empleados se cargan directamente en tu Google Sheets en la pestaña 'empleados'.")
+    st.markdown(f"[➡️ Abrir tu Google Sheets en Celular o PC](https://docs.google.com/spreadsheets/d/{ID_DE_TU_HOJA})")
+    
+    st.subheader("Nómina Actual de Empleados")
+    if not df_emp.empty:
+        vista_emp = df_emp.copy()
+        vista_emp.columns = ['Legajo', 'Nombre Completo', 'Puesto / Función', 'Email']
+        st.dataframe(vista_emp, use_container_width=True, hide_index=True)
+    else:
+        st.warning("No hay empleados registrados en tu planilla de Google.")
 
 elif menu == "📤 Cargar Reporte USB":
     st.header("Importar Datos de Reloj Fichador (.txt / .xlsx)")
     archivo = st.file_uploader("Sube el archivo aquí", type=['xlsx', 'txt'])
+    df_emp = cargar_empleados()
     
     if archivo:
         st.info("Archivo detectado. Listo para procesar.")
-        if st.button("Procesar y Guardar Permanente"):
+        if st.button("Procesar y Calcular Horarios"):
             try:
                 df = None
                 nombre_archivo = archivo.name.lower()
@@ -137,7 +148,6 @@ elif menu == "📤 Cargar Reporte USB":
                                 legajo_int = int(partes[2]) 
                                 fecha_str = partes[indice_fecha].replace('/', '-')
                                 hora_str = partes[indice_fecha + 1].replace('.', '')
-                                
                                 datetime.strptime(hora_str, '%H:%M:%S')
                                 
                                 df_procesado.append({
@@ -151,13 +161,11 @@ elif menu == "📤 Cargar Reporte USB":
                     df = pd.DataFrame(df_procesado)
 
                 if df is not None and not df.empty:
-                    registros_cargados = 0
+                    jornadas_calculadas = []
                     
                     for (legajo, fecha), group in df.groupby(['Legajo', 'Fecha']):
-                        c.execute("SELECT legajo FROM empleados WHERE legajo=?", (int(legajo),))
-                        if c.fetchone():
+                        if legajo in df_emp['legajo'].values:
                             horas_ordenadas = sorted(group['Hora'].tolist())
-                            
                             entrada = horas_ordenadas[0]
                             salida = horas_ordenadas[-1]
                             
@@ -167,50 +175,52 @@ elif menu == "📤 Cargar Reporte USB":
                             fmt = '%H:%M:%S'
                             t1 = datetime.strptime(entrada, fmt)
                             t2 = datetime.strptime(salida, fmt)
-                            
                             segundos_trabajados = int((t2 - t1).total_seconds())
                             
-                            c.execute("SELECT id FROM reportes WHERE legajo=? AND fecha=?", (int(legajo), str(fecha)))
-                            existe = c.fetchone()
-                            
-                            if existe:
-                                c.execute("""UPDATE reportes SET entrada=?, salida=?, total_segundos=? 
-                                             WHERE legajo=? AND fecha=?""",
-                                          (str(entrada), str(salida), segundos_trabajados, int(legajo), str(fecha)))
-                            else:
-                                c.execute("""INSERT INTO reportes (legajo, fecha, entrada, salida, total_segundos) 
-                                             VALUES (?, ?, ?, ?, ?)""", 
-                                          (int(legajo), str(fecha), str(entrada), str(salida), segundos_trabajados))
-                            
-                            registros_cargados += 1
-                                
-                    conn.commit()
-                    if registros_cargados > 0:
-                        st.success(f"¡Éxito! Se procesaron {registros_cargados} jornadas de trabajo correctamente.")
+                            jornadas_calculadas.append({
+                                'Legajo': legajo,
+                                'Fecha': fecha,
+                                'Entrada': entrada,
+                                'Salida': salida,
+                                'Tiempo Real': formatear_segundos(segundos_trabajados)
+                            })
+                    
+                    if jornadas_calculadas:
+                        st.success("¡Archivo procesado con éxito!")
+                        st.subheader("Resultados listos para revisar:")
+                        # Se muestra como "Tiempo Real" con formato HH:MM:SS
+                        st.dataframe(pd.DataFrame(jornadas_calculadas), use_container_width=True, hide_index=True)
+                        st.caption("💡 Tip: Copiá estas filas a tu pestaña 'reportes' de Google Sheets para guardar el historial permanente.")
                     else:
-                        st.warning("No se guardaron datos nuevos. Verifica que los legajos existan en la base de empleados.")
+                        st.warning("No se encontraron jornadas válidas o los legajos del archivo no coinciden con tus empleados de Google Sheets.")
                 else:
                     st.error("No se pudo extraer información válida del archivo.")
-                    
             except Exception as e:
-                st.error(f"Error general en el sistema: {e}")
+                st.error(f"Error al procesar: {e}")
 
 elif menu == "🔍 Historial Detallado":
     st.header("Consulta de Tiempos Exactos")
-    leg = st.number_input("Legajo del Empleado", min_value=1)
+    leg = st.number_input("Legajo del Empleado", min_value=1, step=1)
     f1 = st.date_input("Desde")
     f2 = st.date_input("Hasta")
     
     if st.button("Calcular Tiempo Exacto"):
-        query = f"SELECT fecha, entrada, salida, total_segundos FROM reportes WHERE legajo={leg} AND fecha BETWEEN '{f1}' AND '{f2}'"
-        res = pd.read_sql_query(query, conn)
-        if not res.empty:
-            segundos_totales = res['total_segundos'].sum()
+        df_rep = cargar_reportes()
+        if not df_rep.empty:
+            df_rep['legajo'] = df_rep['legajo'].astype(int)
+            df_rep['fecha'] = pd.to_datetime(df_rep['fecha']).dt.date
             
-            # Muestra el total por empleado en formato ultra exacto HH:MM:SS
-            st.markdown(f"### Total Trabajado en el período: `{formatear_segundos(segundos_totales)}`")
+            res = df_rep[(df_rep['legajo'] == leg) & (df_rep['fecha'] >= f1) & (df_rep['fecha'] <= f2)]
             
-            # Mostramos la tabla limpia para que el jefe vea las marcas diarias
-            st.table(res[['fecha', 'entrada', 'salida']])
+            if not res.empty:
+                segundos_totales = res['total_segundos'].sum()
+                # Cambiado el texto a algo mucho más limpio
+                st.markdown(f"### Tiempo total cumplido: `{formatear_segundos(segundos_totales)}`")
+                
+                vista_final = res[['fecha', 'entrada', 'salida']].copy()
+                vista_final.columns = ['Fecha', 'Hora Entrada', 'Hora Salida']
+                st.table(vista_final)
+            else:
+                st.warning("No hay registros guardados para este legajo en esas fechas.")
         else:
-            st.warning("No hay registros de asistencias para este legajo en las fechas seleccionadas.")
+            st.warning("La base de datos de reportes en Google Sheets está vacía.")
