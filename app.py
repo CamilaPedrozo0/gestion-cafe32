@@ -7,21 +7,45 @@ import re
 # --- CONFIGURACIÓN E INTERFAZ LIMPIA ---
 st.set_page_config(page_title="Gestión Café 32", page_icon="☕", layout="wide")
 
+# Forzamos el modo oscuro real controlando los fondos y textos por completo
 hide_style = """
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
-    [data-testid="stSidebar"] {background-color: #2c3e50;}
-    .stMarkdown, p, h1, h2, h3, label {color: #ffffff !important;}
-    .feriado-row {background-color: #1e3a8a !important; color: #ffffff !important;}
+    
+    /* Fondo principal oscuro y contenedor de la app */
+    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+        background-color: #0e1117 !important;
+    }
+    
+    /* Fondo de la barra lateral aún más oscuro */
+    [data-testid="stSidebar"] {
+        background-color: #1c2331 !important;
+    }
+    
+    /* Forzar todos los textos, títulos, párrafos y etiquetas a color blanco/claro */
+    .stMarkdown, p, h1, h2, h3, h4, h5, h6, label, span, div {
+        color: #f8fafc !important;
+    }
+    
+    /* Ajuste de color para los textos dentro de los botones y selectores */
+    .stButton>button, div[data-baseweb="select"] * {
+        color: #000000 !important; /* Texto oscuro dentro de botones/listas para que se lea al hacer clic */
+    }
+    
+    /* Inputs de texto (Usuario y Contraseña) con fondo visible */
+    input {
+        background-color: #1e293b !important;
+        color: #ffffff !important;
+    }
     </style>
 """
 st.markdown(hide_style, unsafe_allow_html=True)
 
 # --- CONEXIÓN COMPARTIDA A GOOGLE SHEETS ---
 # COLOCÁ ACÁ TU ID LARGO DE GOOGLE SHEETS:
-ID_DE_TU_HOJA = "https://docs.google.com/spreadsheets/d/1veKrncoLJmYwxXrnEOdVembeiXT9oL9nm9le-r1ZpRg/edit?usp=sharing" 
+ID_DE_TU_HOJA = "TU_ID_AQUÍ" 
 
 URL_EMPLEADOS = f"https://docs.google.com/spreadsheets/d/{ID_DE_TU_HOJA}/gviz/tq?tqx=out:csv&sheet=empleados"
 URL_REPORTES = f"https://docs.google.com/spreadsheets/d/{ID_DE_TU_HOJA}/gviz/tq?tqx=out:csv&sheet=reportes"
@@ -143,16 +167,13 @@ elif menu == "📅 Calendario de Turnos":
         st.subheader("Filtro de visualización")
         fecha_cal = st.date_input("Selecciona una fecha para ver los turnos:", value=date.today())
         
-        # Comprobamos si el día seleccionado es feriado
         nombre_feriado = es_feriado(fecha_cal)
         if nombre_feriado:
             st.markdown(f"<div style='background-color: #1e3a8a; padding: 15px; border-radius: 5px; margin-bottom: 15px; border: 1px solid #3b82f6;'><h4 style='margin:0; color: #ffffff;'>🔵 ¡DÍA FERIADO NACIONAL!: {nombre_feriado}</h4><p style='margin:5px 0 0 0; color: #cbd5e1;'>Las jornadas trabajadas hoy se marcan de cobro diferencial.</p></div>", unsafe_allow_html=True)
         
-        # Filtrar fichajes del día elegido
         df_rep['fecha_dt'] = pd.to_datetime(df_rep['fecha']).dt.date
         fichajes_dia = df_rep[df_rep['fecha_dt'] == fecha_cal]
         
-        # Cruzar con datos de empleado para traer el nombre
         df_merge = pd.merge(fichajes_dia, df_emp, on='legajo', how='left')
         
         col_m, col_t = st.columns(2)
@@ -265,7 +286,6 @@ elif menu == "📤 Cargar Reporte USB":
                             t2 = datetime.strptime(salida, fmt)
                             segundos_trabajados = int((t2 - t1).total_seconds())
                             
-                            # Validar si es feriado nacional
                             fecha_partes = list(map(int, fecha.split('-')))
                             fecha_obj = date(fecha_partes[0], fecha_partes[1], fecha_partes[2])
                             nombre_f = es_feriado(fecha_obj)
@@ -285,7 +305,7 @@ elif menu == "📤 Cargar Reporte USB":
                         st.success("¡Archivo procesado con éxito!")
                         st.subheader("Resultados listos para revisar:")
                         st.dataframe(pd.DataFrame(jornadas_calculadas), use_container_width=True, hide_index=True)
-                        st.caption("💡 Tip: Copiá estas filas a tu pestaña 'reportes' de Google Sheets (incluyendo la nueva columna 'tipo_dia') para guardar el historial permanente.")
+                        st.caption("💡 Tip: Copiá estas filas a tu pestaña 'reportes' de Google Sheets (incluyendo la columna 'tipo_dia') para guardar el historial permanente.")
                     else:
                         st.warning("No se encontraron jornadas válidas o los legajos del archivo no coinciden con tus empleados de Google Sheets.")
                 else:
@@ -312,7 +332,6 @@ elif menu == "🔍 Historial Detallado":
                 segundos_feriados = 0
                 dias_feriados_trabajados = 0
                 
-                # Buscamos si la columna existe para evitar fallas
                 col_tipo = 'tipo_dia' if 'tipo_dia' in res.columns else ('tipo_día' if 'tipo_día' in res.columns else None)
                 
                 for _, fila in res.iterrows():
@@ -330,18 +349,15 @@ elif menu == "🔍 Historial Detallado":
                     st.markdown(f"#### 🔵 Atención Liquidación: Trabajó **{dias_feriados_trabajados} día(s) feriado(s)** en este rango.")
                     st.markdown(f"Total Horas a pagar al 100% (Doble): `{formatear_segundos(segundos_feriados)}`")
                 
-                # Formatear tabla visual
                 vista_final = res.copy()
                 cols_mostrar = ['fecha', 'entrada', 'salida']
                 if col_tipo: cols_mostrar.append(col_tipo)
                 
                 vista_final = vista_final[cols_mostrar]
-                # Renombrar columnas para pantalla
                 nuevos_nombres = {'fecha': 'Fecha', 'entrada': 'Hora Entrada', 'salida': 'Hora Salida'}
                 if col_tipo: nuevos_nombres[col_tipo] = 'Tipo de Día / Feriado'
                 vista_final.rename(columns=nuevos_nombres, inplace=True)
                 
-                # Mostrar tabla con función de estilo para pintar feriados en azul
                 def resaltar_feriados(row):
                     if col_tipo and "Feriado" in str(row['Tipo de Día / Feriado']):
                         return ['background-color: #1e3a8a; color: white'] * len(row)
