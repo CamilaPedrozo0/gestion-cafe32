@@ -10,8 +10,8 @@ st.set_page_config(page_title="Gestión Horas Café 32", page_icon="☕", layout
 st.sidebar.markdown("## ⚙️ Conexión Base de Datos")
 
 # Si tenés un ID fijo lo podés poner acá, sino lo pegás directo en la pantalla de la app
-id_defecto = "TU_ID_DE_GOOGLE_SHEETS_AQUI"
-id_sheets = st.sidebar.text_input("Pegá acá el ID de tu Google Sheets:", value=id_defecto)
+id_defecto = "https://docs.google.com/spreadsheets/d/1veKrncoLJmYwxXrnEOdVembeiXT9oL9nm9le-r1ZpRg/edit?usp=sharing"
+id_sheets = st.sidebar.text_input("https://docs.google.com/spreadsheets/d/1veKrncoLJmYwxXrnEOdVembeiXT9oL9nm9le-r1ZpRg/edit?usp=sharing", value=id_defecto)
 
 URL_EMPLEADOS = f"https://docs.google.com/spreadsheets/d/{id_sheets}/gviz/tq?tqx=out:csv&sheet=empleados"
 URL_REPORTES = f"https://docs.google.com/spreadsheets/d/{id_sheets}/gviz/tq?tqx=out:csv&sheet=reportes"
