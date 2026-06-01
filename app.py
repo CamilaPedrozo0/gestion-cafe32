@@ -20,7 +20,7 @@ st.markdown(hide_style, unsafe_allow_html=True)
 
 # --- CONEXIÓN COMPARTIDA A GOOGLE SHEETS ---
 # COLOCÁ ACÁ TU ID LARGO DE GOOGLE SHEETS:
-ID_DE_TU_HOJA = "TU_ID_AQUÍ" 
+ID_DE_TU_HOJA = "https://docs.google.com/spreadsheets/d/1veKrncoLJmYwxXrnEOdVembeiXT9oL9nm9le-r1ZpRg/edit?usp=sharing" 
 
 URL_EMPLEADOS = f"https://docs.google.com/spreadsheets/d/{ID_DE_TU_HOJA}/gviz/tq?tqx=out:csv&sheet=empleados"
 URL_REPORTES = f"https://docs.google.com/spreadsheets/d/{ID_DE_TU_HOJA}/gviz/tq?tqx=out:csv&sheet=reportes"
