@@ -7,11 +7,21 @@ import re
 st.set_page_config(page_title="Gestión Horas Café 32", page_icon="☕", layout="wide")
 
 # --- CONTROL DEL ID DE GOOGLE SHEETS DESDE LA INTERFAZ ---
-st.sidebar.markdown("## ⚙️ Conexión Base de Datos")
+st.sidebar.markdown("<h2>⚙️ Conexión Base de Datos</h2>", unsafe_allow_html=True)
 
-# Si tenés un ID fijo lo podés poner acá, sino lo pegás directo en la pantalla de la app
-id_defecto = "https://docs.google.com/spreadsheets/d/1veKrncoLJmYwxXrnEOdVembeiXT9oL9nm9le-r1ZpRg/edit?usp=sharing"
-id_sheets = st.sidebar.text_input("https://docs.google.com/spreadsheets/d/1veKrncoLJmYwxXrnEOdVembeiXT9oL9nm9le-r1ZpRg/edit?usp=sharing", value=id_defecto)
+# Link por defecto (vacío o el tuyo)
+id_defecto = "1veKrncoLJmYwXXrNeODVembeiXT9oL9nm9le-r1ZpRg"
+url_o_id_ingresado = st.sidebar.text_input("https://docs.google.com/spreadsheets/d/1veKrncoLJmYwxXrnEOdVembeiXT9oL9nm9le-r1ZpRg/edit?usp=sharing", value=id_defecto)
+
+# FUNCIÓN INTELIGENTE: Si pegan el link entero, extrae solo el ID para que no se rompa
+def extraer_id_sheets(texto):
+    if "docs.google.com/spreadsheets" in texto:
+        match = re.search(r'/d/([^/]+)', texto)
+        if match:
+            return match.group(1)
+    return texto.strip()
+
+id_sheets = extraer_id_sheets(url_o_id_ingresado)
 
 URL_EMPLEADOS = f"https://docs.google.com/spreadsheets/d/{id_sheets}/gviz/tq?tqx=out:csv&sheet=empleados"
 URL_REPORTES = f"https://docs.google.com/spreadsheets/d/{id_sheets}/gviz/tq?tqx=out:csv&sheet=reportes"
@@ -38,7 +48,7 @@ def determinar_turno(hora_entrada_str):
         return "Indefinido"
 
 def cargar_empleados():
-    if id_sheets == "TU_ID_DE_GOOGLE_SHEETS_AQUI" or not id_sheets:
+    if not id_sheets:
         return pd.DataFrame(columns=['legajo', 'nombre', 'puesto', 'email'])
     try:
         df = pd.read_csv(URL_EMPLEADOS)
@@ -48,7 +58,7 @@ def cargar_empleados():
         return pd.DataFrame(columns=['legajo', 'nombre', 'puesto', 'email'])
 
 def cargar_reportes():
-    if id_sheets == "TU_ID_DE_GOOGLE_SHEETS_AQUI" or not id_sheets:
+    if not id_sheets:
         return pd.DataFrame(columns=['id', 'legajo', 'fecha', 'entrada', 'salida', 'tiempo_trabajado', 'tipo_dia'])
     try:
         df = pd.read_csv(URL_REPORTES)
@@ -80,11 +90,8 @@ menu = st.sidebar.radio(
 
 # --- PANEL PRINCIPAL ---
 st.title("☕ Gestión Horas Café 32")
-st.markdown(f"**Base de datos vinculada:** `gestion horas cafe32` (ID: {id_sheets})")
+st.markdown(f"**Base de datos vinculada:** `gestion horas cafe32` (ID Extraído: `{id_sheets}`)")
 st.markdown("---")
-
-if id_sheets == "TU_ID_DE_GOOGLE_SHEETS_AQUI" or not id_sheets:
-    st.warning("⚠️ Recordá ingresar el ID correcto de tu Google Sheets en la barra lateral izquierda para habilitar la sincronización de la base de datos.")
 
 # --- SECCIONES ---
 
@@ -99,11 +106,11 @@ if menu == "📊 Resumen General":
     with col2:
         st.metric("Total Fichajes en Historial", len(df_rep))
         
-    st.subheader("Últimos Registros Almacenados")
+    st.subheader("Últimos Registros Almacenados en Google Sheets")
     if not df_rep.empty:
-        st.dataframe(df_rep.tail(10), use_container_width=True, hide_index=True)
+        st.dataframe(df_rep.tail(15), use_container_width=True, hide_index=True)
     else:
-        st.info("No hay marcas históricas registradas en tu Google Sheets todavía.")
+        st.info("No hay marcas históricas registradas en tu Google Sheets todavía. Si ya pegaste datos en el Excel, asegurate de que el archivo esté compartido públicamente como Lector.")
 
 elif menu == "📅 Calendario de Turnos":
     st.header("📅 Calendario y Planificación de Turnos")
@@ -117,56 +124,65 @@ elif menu == "📅 Calendario de Turnos":
         st.info(f"🔵 DÍA FERIADO NACIONAL: {nombre_feriado}")
         
     if not df_rep.empty:
-        df_rep['fecha_dt'] = pd.to_datetime(df_rep['fecha'], errors='coerce').dt.date
-        fichajes_dia = df_rep[df_rep['fecha_dt'] == fecha_cal]
-        
-        if not fichajes_dia.empty and not df_emp.empty:
-            df_merge = pd.merge(fichajes_dia, df_emp, on='legajo', how='left')
+        try:
+            # Normalizar fechas para comparar
+            df_rep['fecha_clean'] = df_rep['fecha'].astype(str).str.replace('/', '-')
+            fecha_cal_str = fecha_cal.strftime('%d-%m-%Y')
+            fecha_cal_str_alt = fecha_cal.strftime('%Y-%m-%d')
             
-            col_m, col_t = st.columns(2)
-            with col_m:
-                st.subheader("🌅 Turno Mañana (7:00 a 11:00)")
-                m_data = df_merge[df_merge['entrada'].apply(determinar_turno) == "Mañana"]
-                if not m_data.empty:
-                    st.dataframe(m_data[['legajo', 'nombre', 'entrada', 'salida', 'tiempo_trabajado']], use_container_width=True, hide_index=True)
+            fichajes_dia = df_rep[(df_rep['fecha_clean'] == fecha_cal_str) | (df_rep['fecha_clean'] == fecha_cal_str_alt)]
+            
+            if not fichajes_dia.empty:
+                if not df_emp.empty:
+                    df_emp['legajo'] = df_emp['legajo'].astype(int)
+                    fichajes_dia['legajo'] = fichajes_dia['legajo'].astype(int)
+                    df_merge = pd.merge(fichajes_dia, df_emp, on='legajo', how='left')
                 else:
-                    st.caption("No hay ingresos registrados en la mañana para esta fecha.")
-            with col_t:
-                st.subheader("🌇 Turno Tarde (Post 11:00)")
-                t_data = df_merge[df_merge['entrada'].apply(determinar_turno) == "Tarde"]
-                if not t_data.empty:
-                    st.dataframe(t_data[['legajo', 'nombre', 'entrada', 'salida', 'tiempo_trabajado']], use_container_width=True, hide_index=True)
-                else:
-                    st.caption("No hay ingresos registrados en la tarde para esta fecha.")
-        else:
-            st.warning("No se encontraron registros cargados en Google Sheets para el día seleccionado.")
+                    df_merge = fichajes_dia.copy()
+                    df_merge['nombre'] = "Sin Base Empleados"
+                
+                col_m, col_t = st.columns(2)
+                with col_m:
+                    st.subheader("🌅 Turno Mañana (7:00 a 11:00)")
+                    m_data = df_merge[df_merge['entrada'].apply(determinar_turno) == "Mañana"]
+                    if not m_data.empty:
+                        st.dataframe(m_data[['legajo', 'nombre', 'entrada', 'salida', 'tiempo_trabajado']], use_container_width=True, hide_index=True)
+                    else:
+                        st.caption("No hay ingresos registrados en la mañana.")
+                with col_t:
+                    st.subheader("🌇 Turno Tarde (Post 11:00)")
+                    t_data = df_merge[df_merge['entrada'].apply(determinar_turno) == "Tarde"]
+                    if not t_data.empty:
+                        st.dataframe(t_data[['legajo', 'nombre', 'entrada', 'salida', 'tiempo_trabajado']], use_container_width=True, hide_index=True)
+                    else:
+                        st.caption("No hay ingresos registrados en la tarde.")
+            else:
+                st.warning(f"No se encontraron registros de fichajes en Google Sheets para el día {fecha_cal.strftime('%d/%m/%Y')}.")
+        except Exception as e:
+            st.error(f"Error procesando el calendario: {e}")
     else:
         st.error("El historial de reportes en Google Sheets está vacío.")
 
 elif menu == "👤 Base de Empleados":
     st.header("👤 Personal Registrado")
-    if id_sheets != "TU_ID_DE_GOOGLE_SHEETS_AQUI" and id_sheets:
-        st.markdown(f"[➡️ Abrir planilla 'gestion horas cafe32' en Google Drive](https://docs.google.com/spreadsheets/d/{id_sheets})")
-    
     df_emp = cargar_empleados()
-    st.subheader("Pestaña actual: empleados")
+    st.subheader("Datos actuales de la pestaña: empleados")
     if not df_emp.empty:
-        st.dataframe(df_emp[['legajo', 'nombre', 'puesto', 'email']], use_container_width=True, hide_index=True)
+        st.dataframe(df_emp, use_container_width=True, hide_index=True)
     else:
-        st.info("Sin registros visuales. Completá las filas en Google Sheets para sincronizar la nómina.")
+        st.info("No se leyeron empleados. Asegurate de rellenar la pestaña 'empleados' en tu Excel.")
 
 elif menu == "📤 Cargar Reporte USB":
     st.header("📤 Procesar Archivo del Reloj Fichador")
-    st.markdown("Subí el archivo `.txt` extraído del reloj Prosoft. La app lo va a procesar en el acto de forma autónoma.")
+    st.markdown("Subí tu archivo `.txt`. La app calculará todo de forma autónoma e inmediata.")
     
-    archivo = st.file_uploader("Seleccioná el archivo horarios.txt", type=['txt'])
+    archivo = st.file_uploader("Seleccioná tu archivo horarios.txt", type=['txt'])
     
     if archivo:
         try:
             contenido = archivo.getvalue().decode("utf-8")
             df_procesado = []
             
-            # ESCÁNER ROBUSTO LÍNEA POR LÍNEA (Ignora textos inválidos automáticamente)
             for linea in contenido.splitlines():
                 linea = linea.strip()
                 if not linea: continue
@@ -219,54 +235,48 @@ elif menu == "📤 Cargar Reporte USB":
                 
                 st.success("¡Archivo analizado con éxito!")
                 df_res = pd.DataFrame(jornadas_finales)
-                
-                # Forzar las columnas idénticas a la pestaña de reportes del usuario
                 df_res = df_res[['id', 'legajo', 'fecha', 'entrada', 'salida', 'tiempo_trabajado', 'tipo_dia']]
+                
                 st.dataframe(df_res, use_container_width=True, hide_index=True)
                 
-                st.markdown("### 📥 ¿Cómo pasar esto a tu Google Sheets?")
-                st.info("Como Google Sheets actúa de base de datos segura, seleccioná las filas de arriba con el mouse, copialas (Ctrl+C) y pegalas directamente al final de tu pestaña **'reportes'**.")
-                if id_sheets != "TU_ID_DE_GOOGLE_SHEETS_AQUI" and id_sheets:
-                    st.markdown(f"[➡️ Hacer clic acá para abrir tu planilla gestion horas cafe32 y pegar los datos](https://docs.google.com/spreadsheets/d/{id_sheets})")
+                st.markdown("### 📥 PASO SEGUIDO:")
+                st.info("Seleccioná la tabla de arriba completa con el mouse, apretá Copiar (Ctrl+C) y pegala abajo de todo en tu pestaña 'reportes' de Google Sheets.")
             else:
-                st.error("No se encontraron registros de fichajes válidos con formato de Legajo, Fecha y Hora en este archivo.")
+                st.error("No se encontraron registros legibles de marcas.")
         except Exception as e:
-            st.error(f"Error crítico al leer el archivo: {e}")
+            st.error(f"Error procesando archivo: {e}")
 
 elif menu == "🔍 Historial Detallado":
     st.header("🔍 Auditoría e Historial de Horas Acumuladas")
     df_rep = cargar_reportes()
     
-    leg_busqueda = st.number_input("Ingresá el Legajo del Empleado a consultar:", min_value=1, step=1)
-    f_desde = st.date_input("Desde el día:", value=date.today() - timedelta(days=30))
-    f_hasta = st.date_input("Hasta el día:", value=date.today())
+    leg_busqueda = st.number_input("Legajo del Empleado:", min_value=1, step=1)
+    f_desde = st.date_input("Desde:", value=date.today() - timedelta(days=30))
+    f_hasta = st.date_input("Hasta:", value=date.today())
     
-    if st.button("Calcular Resumen de Horas"):
+    if st.button("Calcular Horas"):
         if not df_rep.empty:
             try:
                 df_rep['legajo'] = df_rep['legajo'].astype(int)
-                df_rep['fecha_dt'] = pd.to_datetime(df_rep['fecha'], errors='coerce').dt.date
+                df_rep['fecha_clean'] = df_rep['fecha'].astype(str).str.replace('/', '-')
                 
-                resultado = df_rep[(df_rep['legajo'] == leg_busqueda) & (df_rep['fecha_dt'] >= f_desde) & (df_rep['fecha_dt'] <= f_hasta)]
+                # Intentar parsear las fechas guardadas para filtrar
+                def parse_fecha(x):
+                    for fmt in ('%d-%m-%Y', '%Y-%m-%d'):
+                        try: return datetime.strptime(x, fmt).date()
+                        except: pass
+                    return None
+                
+                df_rep['fecha_obj'] = df_rep['fecha_clean'].apply(parse_fecha)
+                resultado = df_rep[(df_rep['legajo'] == leg_busqueda) & (df_rep['fecha_obj'] >= f_desde) & (df_rep['fecha_obj'] <= f_hasta)]
                 
                 if not resultado.empty:
-                    segundos_totales = 0
-                    segundos_feriados = 0
-                    for _, fila in resultado.iterrows():
-                        t_str = fila['tiempo_trabajado']
-                        seg = convertir_a_segundos(t_str)
-                        segundos_totales += seg
-                        if "Feriado" in str(fila['tipo_dia']):
-                            segundos_feriados += seg
-                            
-                    st.markdown(f"### ⏱️ Tiempo total cumplido en el período: `{formatear_segundos(segundos_totales)}`")
-                    if segundos_feriados > 0:
-                        st.markdown(f"### 🔵 Horas acumuladas en días Feriados: `{formatear_segundos(segundos_feriados)}`")
-                    
+                    segundos_totales = sum(resultado['tiempo_trabajado'].apply(convertir_a_segundos))
+                    st.markdown(f"### ⏱️ Horas Totales Registradas: `{formatear_segundos(segundos_totales)}`")
                     st.dataframe(resultado[['fecha', 'entrada', 'salida', 'tiempo_trabajado', 'tipo_dia']], use_container_width=True, hide_index=True)
                 else:
-                    st.warning("No se encontraron registros para ese legajo en el rango de fechas seleccionado.")
+                    st.warning("No hay registros para este legajo en el rango seleccionado.")
             except Exception as e:
-                st.error(f"Ocurrió un inconveniente al filtrar los datos: {e}")
+                st.error(f"Error al filtrar: {e}")
         else:
-            st.warning("La base de datos de reportes en Google Sheets no contiene registros.")
+            st.warning("La base de datos de reportes en Google Sheets está vacía.")
