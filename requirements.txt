@@ -1,4 +1,3 @@
-st-theme
 streamlit
 pandas
 openpyxl
