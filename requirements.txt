@@ -1,4 +1,3 @@
 streamlit
 pandas
 openpyxl
-streamlit-google-sheets-connection==0.0.3
