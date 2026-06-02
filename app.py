@@ -7,7 +7,7 @@ import re
 # =========================================================================
 st.set_page_config(page_title="Gestión Horas Café 32", layout="wide", page_icon="☕")
 
-# Estilo personalizado para limpiar márgenes y mejorar la estética del menú
+# Estilo personalizado para limpiar márgenes superiores
 st.markdown("""
     <style>
         .block-container { padding-top: 2rem; }
@@ -15,8 +15,12 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Inicializar la memoria de empleados manuales si no existe para que no se borren
+if 'empleados_manuales' not in st.session_state:
+    st.session_state['empleados_manuales'] = pd.DataFrame(columns=['legajo', 'Nombre Completo', 'Sector'])
+
 # =========================================================================
-# LÓGICA DE DETECCIÓN Y CARGA DE EMPLEADOS (LOCAL / GOOGLE SHEETS)
+# LÓGICA DE CARGA AUTOMÁTICA DE EMPLEADOS
 # =========================================================================
 def extraer_sheet_id(url):
     if "docs.google.com" in url:
@@ -25,27 +29,23 @@ def extraer_sheet_id(url):
             return match.group(1)
     return url.strip()
 
-# Base de datos local por defecto (salvavidas si el link de Sheets no está o falla)
+# Tu lista oficial cargada directamente en el código de forma indestructible
 EMPLEADOS_POR_DEFECTO = {
-    'legajo': [10, 13, 5, 4, 8, 11, 2, 7, 9],
-    'Nombre Completo': ['Priscila', 'Valentina', 'Axel', 'Ariana', 'Israel', 'Candela', 'Jennifer', 'Pepi', 'Lucia'],
-    'Sector': ['Cafetería', 'Cafetería', 'Administración', 'Cocina', 'Salón', 'Cocina', 'Caja', 'Caja', 'Salón']
+    'legajo': [1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 13],
+    'Nombre Completo': ['Camila', 'Jennifer', 'Joel', 'Ariana', 'Axel', 'Pepi', 'Israel', 'Lucia', 'Priscila', 'Candela', 'Valentina'],
+    'Sector': ['Salón', 'Caja', 'Cafetería', 'Cocina', 'Administración', 'Caja', 'Salón', 'Salón', 'Cafetería', 'Cocina', 'Cafetería']
 }
 
-@st.cache_data(ttl=60)
-def cargar_base_empleados(url_or_id):
+@st.cache_data(ttl=10)
+def cargar_base_sheets(url_or_id):
     sheet_id = extraer_sheet_id(url_or_id)
-    # Si viene el marcador por defecto o está vacío, usa la local
     if not sheet_id or "TU_ID_AQUÍ" in sheet_id:
-        return pd.DataFrame(EMPLEADOS_POR_DEFECTO), "Base Local Temporal (Modo de prueba)"
-    
+        return None, "Usando lista interna del sistema (No se ingresó Google Sheets)"
     try:
         csv_url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv"
         df = pd.read_csv(csv_url)
-        
-        # Intentar normalizar nombres de columnas comunes
         df.columns = [c.strip() for c in df.columns]
-        columnas_mapeo = {c: c for c in df.columns}
+        columnas_mapeo = {}
         for col in df.columns:
             if col.lower() in ['legajo', 'id', 'nro', 'numero']:
                 columnas_mapeo[col] = 'legajo'
@@ -54,34 +54,34 @@ def cargar_base_empleados(url_or_id):
             if col.lower() in ['sector', 'área', 'area']:
                 columnas_mapeo[col] = 'Sector'
         df = df.rename(columns=columnas_mapeo)
-        
-        if 'legajo' in df.columns:
+        if 'legajo' in df.columns and 'Nombre Completo' in df.columns:
             df['legajo'] = pd.to_numeric(df['legajo'], errors='coerce').fillna(0).astype(int)
-            return df, "Google Sheets En Vivo Conectado"
-        else:
-            return pd.DataFrame(EMPLEADOS_POR_DEFECTO), "Error: No se encontró la columna 'legajo' en el Excel. Usando Base Local."
+            return df[['legajo', 'Nombre Completo', 'Sector']], "Google Sheets Conectado Correctamente"
     except Exception:
-        return pd.DataFrame(EMPLEADOS_POR_DEFECTO), "No se pudo acceder al Google Sheets (Verificá que esté compartido como Lector público). Usando Base Local."
+        return None, "Error de enlace o no está público. Usando lista interna."
+    return None, "Columnas inválidas en Sheets. Usando lista interna."
 
 # =========================================================================
-# MENÚ LATERAL (SIDEBAR) - DISEÑO ORIGINAL RESTAURADO
+# PANEL LATERAL DE CONTROL (SIDEBAR)
 # =========================================================================
 with st.sidebar:
     st.markdown("### ⚙️ Conexión Base de Datos")
-    # Entrada limpia para el link de Google Sheets
+    # ACÁ ES DONDE SE PEGA EL LINK DEL GOOGLE SHEETS 👇
     url_sheets = st.text_input(
         "Enlace de tu Google Sheets:", 
         value="https://docs.google.com/spreadsheets/d/TU_ID_AQUÍ/edit",
-        help="Pegá acá la URL de tu planilla de empleados"
+        help="Pegá la URL completa de tu Google Sheet compartido como Lector público."
     )
     
-    # Carga automática en segundo plano
-    df_emp, estado_conexion = cargar_base_empleados(url_sheets)
+    df_base_sheets, estado_conexion = cargar_base_sheets(url_sheets)
     
-    # Indicador de estado visual elegante
-    st.success("🟢 Base Conectada Activa")
-    st.caption(f"Status: **{estado_conexion}**")
-    
+    if df_base_sheets is not None:
+        df_base = df_base_sheets
+        st.success("🟢 Base Sheets Activa")
+    else:
+        df_base = pd.DataFrame(EMPLEADOS_POR_DEFECTO)
+        st.info(f"ℹ️ {estado_conexion}")
+        
     st.markdown("---")
     st.markdown("### 📑 MENÚ PRINCIPAL")
     
@@ -96,57 +96,78 @@ with st.sidebar:
         ]
     )
 
-# Mantener registro de marcas en la sesión para que no se borren al cambiar de pestaña
+# Unificar datos base (Sistemas/Sheets) con los que agregues manualmente en caliente
+df_manual = st.session_state['empleados_manuales']
+df_emp = pd.concat([df_base, df_manual]).drop_duplicates(subset=['legajo'], keep='last')
+df_emp['legajo'] = df_emp['legajo'].astype(int)
+
 if 'fichajes_procesados' not in st.session_state:
     st.session_state['fichajes_procesados'] = None
 
 # =========================================================================
-# CONTENIDO PRINCIPAL SEGÚN SELECCIÓN
+# CONTENIDO CENTRAL DE LA APLICACIÓN
 # =========================================================================
-st.title("☕ Gestión Horas Café 32")
-st.markdown(f"**Origen de datos actual:** `{estado_conexion}`")
+st.title("☕ GESTIÓN DE HORAS - CAFE32")
 st.markdown("---")
 
-# -------------------------------------------------------------------------
-# SECCIÓN: RESUMEN GENERAL (DASHBOARD)
-# -------------------------------------------------------------------------
+# 1. SECCIÓN: RESUMEN GENERAL
 if seccion == "📊 Resumen General":
     st.subheader("Resumen General del Sistema")
-    
     col_m1, col_m2 = st.columns(2)
     with col_m1:
-        st.metric(label="Personal Registrado en Base", value=len(df_emp))
+        st.metric(label="Personal Total Registrado", value=len(df_emp))
     with col_m2:
         total_fichajes = len(st.session_state['fichajes_procesados']) if st.session_state['fichajes_procesados'] is not None else 0
-        st.metric(label="Total Fichajes en Historial", value=total_fichajes)
+        st.metric(label="Total Fichajes en esta Sesión", value=total_fichajes)
         
-    st.markdown("### Últimos Registros Almacenados")
+    st.markdown("### Últimos Registros Procesados")
     if st.session_state['fichajes_procesados'] is not None:
         st.dataframe(st.session_state['fichajes_procesados'], use_container_width=True, hide_index=True)
     else:
-        st.info("No hay marcas históricas registradas en esta sesión todavía. Dirigite a 'Cargar Reporte USB' para procesar el archivo del reloj.")
+        st.info("Aún no hay marcas de asistencia guardadas en esta sesión. Dirigite a 'Cargar Reporte USB' para procesar el archivo.")
 
-# -------------------------------------------------------------------------
-# SECCIÓN: CALENDARIO DE TURNOS (PROVISORIO)
-# -------------------------------------------------------------------------
+# 2. SECCIÓN: CALENDARIO DE TURNOS
 elif seccion == "📅 Calendario de Turnos":
     st.subheader("📅 Planificación y Control de Turnos")
     st.info("Espacio reservado para la asignación de horarios rotativos y turnos semanales.")
 
-# -------------------------------------------------------------------------
-# SECCIÓN: BASE DE EMPLEADOS
-# -------------------------------------------------------------------------
+# 3. SECCIÓN: BASE DE EMPLEADOS (CON FORMULARIO MANUAL INCORPORADO)
 elif seccion == "👥 Base de Empleados":
-    st.subheader("👥 Nómina de Personal Detectada")
-    st.write("Esta es la lista de empleados activa que el sistema utiliza para cruzar los números de legajo.")
-    st.dataframe(df_emp, use_container_width=True, hide_index=True)
+    st.subheader("👥 Registro y Nómina de Personal")
+    
+    # FORMULARIO MANUAL INTEGRADO DIRECTAMENTE ACÁ
+    with st.expander("➕ Registrar / Agregar Nuevo Empleado Manualmente", expanded=False):
+        with st.form("form_nuevo_empleado"):
+            col1, col2 = st.columns(2)
+            with col1:
+                nuevo_legajo = st.number_input("Número de Legajo (Igual al del Reloj):", min_value=1, max_value=9999, step=1)
+                nuevo_nombre = st.text_input("Nombre Completo del Empleado:")
+            with col2:
+                nuevo_sector = st.selectbox("Sector asignado:", ["Cafetería", "Cocina", "Salón", "Caja", "Administración", "Limpieza"])
+            
+            boton_guardar = st.form_submit_button("Guardar Empleado")
+            
+            if boton_guardar:
+                if nuevo_nombre.strip() == "":
+                    st.error("El nombre no puede estar vacío.")
+                else:
+                    nueva_fila = pd.DataFrame([{
+                        'legajo': int(nuevo_legajo),
+                        'Nombre Completo': nuevo_nombre.strip(),
+                        'Sector': nuevo_sector
+                    }])
+                    st.session_state['empleados_manuales'] = pd.concat([st.session_state['empleados_manuales'], nueva_fila], ignore_index=True)
+                    st.success(f"¡{nuevo_nombre} fue agregado con éxito al sistema local!")
+                    st.rerun()
 
-# -------------------------------------------------------------------------
-# SECCIÓN: CARGAR REPORTE USB (EL MOTOR RECONSTRUIDO)
-# -------------------------------------------------------------------------
+    st.markdown("### 📋 Lista General de Personal Activo")
+    st.write("Esta tabla combina la lista automática/Sheets junto con los empleados que cargues a mano arriba.")
+    st.dataframe(df_emp.sort_values(by='legajo'), use_container_width=True, hide_index=True)
+
+# 4. SECCIÓN: CARGAR REPORTE USB (EL MOTOR REPARADO)
 elif seccion == "📥 Cargar Reporte USB":
     st.subheader("📥 Conversor de Archivo Fichador Prosoft")
-    st.write("Subí el archivo `.txt` extraído de la memoria del reloj. El sistema calculará las marcas al instante.")
+    st.write("Subí el archivo `.txt` extraído de la memoria del reloj para cruzarlo con el personal.")
     
     uploaded_file = st.file_uploader("Subir archivo .txt", type=["txt"])
     
@@ -164,7 +185,6 @@ elif seccion == "📥 Cargar Reporte USB":
                 if len(partes) < 4:
                     continue
                 
-                # BUSCADOR INTELIGENTE DE FECHA Y HORA (Evita roturas si cambian las columnas)
                 fecha_idx = -1
                 hora_idx = -1
                 for idx, token in enumerate(partes):
@@ -174,11 +194,8 @@ elif seccion == "📥 Cargar Reporte USB":
                             hora_idx = idx + 1
                             break
                 
-                # Si localizó el bloque temporal, extrae la data hacia atrás de forma segura
                 if fecha_idx != -1 and hora_idx != -1:
                     try:
-                        # En Prosoft, el legajo siempre está en la posición 2 (tercer elemento)
-                        # Si por algún motivo la línea es más corta, agarra el primer número que encuentre
                         if fecha_idx >= 3:
                             legajo_id = int(partes[2])
                             nombre_reloj = " ".join(partes[3:fecha_idx])
@@ -198,40 +215,30 @@ elif seccion == "📥 Cargar Reporte USB":
             df_fichajes = pd.DataFrame(lineas_procesadas)
             
             if not df_fichajes.empty:
-                # Asegurar formato de legajos numéricos para el cruce exitoso
                 df_fichajes['legajo'] = df_fichajes['legajo'].astype(int)
-                
-                # Cruce de datos (Merge seguro sin errores de sintaxis)
                 df_resultado = pd.merge(df_fichajes, df_emp, on='legajo', how='left')
                 
-                # Limpieza de valores inexistentes estéticos
                 if 'Nombre Completo' in df_resultado.columns:
                     df_resultado['Nombre Completo'] = df_resultado['Nombre Completo'].fillna("⚠️ NO REGISTRADO EN BASE")
                 if 'Sector' in df_resultado.columns:
                     df_resultado['Sector'] = df_resultado['Sector'].fillna("-")
                 
-                # Reordenamiento visual óptimo
                 columnas_finales = ['legajo', 'Nombre Completo', 'Sector', 'Fecha', 'Hora', 'Nombre Reloj']
                 columnas_visibles = [c for c in columnas_finales if c in df_resultado.columns]
                 
                 st.session_state['fichajes_procesados'] = df_resultado[columnas_visibles]
                 
-                st.success(f"✔️ ¡Se procesaron {len(df_fichajes)} registros de asistencia con éxito!")
-                st.markdown("### 📊 Vista Previa del Reporte Generado")
+                st.success(f"✔️ ¡Se procesaron {len(df_fichajes)} marcas con éxito!")
                 st.dataframe(st.session_state['fichajes_procesados'], use_container_width=True, hide_index=True)
             else:
-                st.error("❌ No se encontraron marcas válidas en el archivo .txt. Verificá que sea el archivo correcto generado por el reloj.")
-                
+                st.error("❌ No se encontraron marcas válidas en el archivo .txt. Verificá el formato.")
         except Exception as e:
-            st.error(f"Error crítico de procesamiento: {e}")
+            st.error(f"Error crítico en el motor de lectura: {e}")
 
-# -------------------------------------------------------------------------
-# SECCIÓN: AUDITORÍA / HISTORIAL DETALLADO
-# -------------------------------------------------------------------------
+# 5. SECCIÓN: HISTORIAL DETALLADO
 elif seccion == "🔍 Historial Detallado":
     st.subheader("🔍 Auditoría Detallada de Asistencias")
     if st.session_state['fichajes_procesados'] is not None:
-        st.write("Usá los controles nativos de la tabla para filtrar u ordenar los registros:")
         st.dataframe(st.session_state['fichajes_procesados'], use_container_width=True, hide_index=True)
     else:
-        st.info("El historial detallado está vacío. Subí un archivo .txt en la sección 'Cargar Reporte USB' para poblar los datos.")
+        st.info("El historial está vacío. Cargá un archivo en la sección 'Cargar Reporte USB' primero.")
