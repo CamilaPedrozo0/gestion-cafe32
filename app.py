@@ -112,7 +112,7 @@ if 'feriados' not in st.session_state:
 # PANTALLA DE ACCESO (LOGIN OBLIGATORIO)
 # =========================================================================
 if not st.session_state['autenticado']:
-    st.subheading = "Acceso restringido"
+  st.subheader("Acceso restringido")
     col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
     with col_l2:
         st.markdown("<h2 style='text-align: center; color: #1E381F;'>☕ CONTROL DE ASISTENCIA</h2>", unsafe_allow_html=True)
