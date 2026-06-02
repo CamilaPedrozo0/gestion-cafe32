@@ -144,7 +144,7 @@ with st.sidebar:
     st.markdown("---")
     # Enlace directo solicitado a Google Sheets
     st.markdown("### 🔗 Acceso Externo")
-    st.markdown("[📊 Abrir Google Sheets](https://docs.google.com/spreadsheets/d/1veKrncoLJmyWxXrneODVembeiXT9oL9nm9le-r1ZpRg/edit?usp=sharing)", unsafe_allow_html=True)
+    st.markdown("[📊 Abrir Google Sheets](https://docs.google.com/spreadsheets/d/1veKrncoLJmYwxXrnEOdVembeiXT9oL9nm9le-r1ZpRg/edit?usp=sharing)", unsafe_allow_html=True)
 
 # =========================================================================
 # MOTOR DE PROCESAMIENTO DE ARCHIVOS PROSOFT (.TXT)
