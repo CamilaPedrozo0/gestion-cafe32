@@ -149,58 +149,47 @@ with st.sidebar:
 # =========================================================================
 # MOTOR DE PROCESAMIENTO DE ARCHIVOS PROSOFT (.TXT)
 # =========================================================================
-def parsear_prosoft_txt(file_bytes):
-    contenido = file_bytes.decode("utf-8")
+def parsear_prosoft_txt(file_upload):
+    # Corrección clave para evitar el AttributeError en Streamlit
+    contenido = file_upload.getvalue().decode("utf-8")
     registros = []
     
     for linea in contenido.splitlines():
+        # Limpiar espacios extraños (como \xa0) y quitar el punto final
         linea_limpia = linea.replace('\xa0', ' ').strip().rstrip('.')
-        if not linea_limpia or "UDISKLOG" in linea_limpia or "DateTime" in linea_limpia:
+        if not linea_limpia or "UDISKLOG" in linea_limpia or "DateTime" in linea_limpia or "Mchn" in linea_limpia:
             continue
             
         partes = linea_limpia.split()
-        if len(partes) < 3:
+        if len(partes) < 7:
             continue
             
-        # Buscar la fecha y la hora posicionalmente de atrás hacia adelante
-        fecha_idx = -1
-        hora_idx = -1
-        for idx, token in enumerate(partes):
-            if ('/' in token or '-' in token) and len(token) >= 8:
-                if idx + 1 < len(partes) and ':' in partes[idx + 1]:
-                    fecha_idx = idx
-                    hora_idx = idx + 1
-                    break
-                    
-        if fecha_idx != -1 and hora_idx != -1:
-            try:
-                # Estructura adaptativa según el número de campos previos
-                if fecha_idx >= 3:
-                    legajo = int(partes[2])
-                else:
-                    legajo = int(partes[0])
-                
-                # Normalización estricta de tiempos
-                fecha_str = partes[fecha_idx].replace('-', '/')
-                fecha_dt = pd.to_datetime(fecha_str, format='%Y/%m/%d', errors='coerce').date()
-                if pd.isna(fecha_dt):
-                    fecha_dt = pd.to_datetime(fecha_str, format='%d/%m/%Y', errors='coerce').date()
-                
-                hora_dt = pd.to_datetime(partes[hora_idx], format='%H:%M:%S').time()
-                
-                if not pd.isna(fecha_dt):
-                    es_feriado = fecha_dt in st.session_state['feriados']
-                    registros.append({
-                        'legajo': legajo,
-                        'fecha': fecha_dt,
-                        'hora': datetime.datetime.combine(fecha_dt, hora_dt),
-                        'es_feriado': es_feriado
-                    })
-            except Exception:
-                continue
+        try:
+            # En tu formato, el legajo limpio está en la tercera columna (índice 2)
+            # Ejemplo: '000000010' se convierte automáticamente en el entero 10
+            legajo = int(partes[2])
+            
+            # La fecha y hora están al final de la línea debido a la separación por espacios
+            fecha_str = partes[-2]  # Ejemplo: '2026/05/01'
+            hora_str = partes[-1]   # Ejemplo: '07:00:00'
+            
+            # Conversión estricta a tipos de datos nativos
+            fecha_dt = pd.to_datetime(fecha_str, format='%Y/%m/%d').date()
+            hora_dt = pd.to_datetime(hora_str, format='%H:%M:%S').time()
+            
+            es_feriado = fecha_dt in st.session_state['feriados']
+            
+            registros.append({
+                'legajo': legajo,
+                'fecha': fecha_dt,
+                'hora': datetime.datetime.combine(fecha_dt, hora_dt),
+                'es_feriado': es_feriado
+            })
+        except Exception:
+            # Ignora líneas de encabezados residuales o con datos corruptos
+            continue
                 
     return pd.DataFrame(registros)
-
 # =========================================================================
 # SECCIÓN 1: EMPLEADOS (AGREGAR / EDITAR)
 # =========================================================================
