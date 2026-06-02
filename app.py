@@ -71,13 +71,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================================
-# INITIALIZATION DE VARIABLES DE SESIÓN (PERSISTENCIA)
+# INICIALIZACIÓN DE VARIABLES DE SESIÓN (PERSISTENCIA)
 # =========================================================================
 if 'autenticado' not in st.session_state:
     st.session_state['autenticado'] = False
 
 if 'empleados' not in st.session_state:
-    # Carga inicial con los 12 empleados fijos solicitados
     st.session_state['empleados'] = pd.DataFrame([
         {'legajo': 1, 'nombre': 'Camila', 'puesto': 'Barista'},
         {'legajo': 2, 'nombre': 'Jennifer', 'puesto': 'Cocina'},
@@ -97,7 +96,6 @@ if 'fichajes_raw' not in st.session_state:
     st.session_state['fichajes_raw'] = pd.DataFrame(columns=['legajo', 'fecha', 'hora', 'es_feriado'])
 
 if 'feriados' not in st.session_state:
-    # Base inicial de feriados (se pueden añadir dinámicamente)
     st.session_state['feriados'] = [
         datetime.date(2026, 1, 1),   # Año Nuevo
         datetime.date(2026, 3, 24),  # Memoria
@@ -112,7 +110,6 @@ if 'feriados' not in st.session_state:
 # PANTALLA DE ACCESO (LOGIN OBLIGATORIO)
 # =========================================================================
 if not st.session_state['autenticado']:
-  st.subheader("Acceso restringido")
     col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
     with col_l2:
         st.markdown("<h2 style='text-align: center; color: #1E381F;'>☕ CONTROL DE ASISTENCIA</h2>", unsafe_allow_html=True)
@@ -142,7 +139,6 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    # Enlace directo solicitado a Google Sheets
     st.markdown("### 🔗 Acceso Externo")
     st.markdown("[📊 Abrir Google Sheets](https://docs.google.com/spreadsheets/d/1veKrncoLJmYwxXrnEOdVembeiXT9oL9nm9le-r1ZpRg/edit?usp=sharing)", unsafe_allow_html=True)
 
@@ -150,30 +146,26 @@ with st.sidebar:
 # MOTOR DE PROCESAMIENTO DE ARCHIVOS PROSOFT (.TXT)
 # =========================================================================
 def parsear_prosoft_txt(file_upload):
-    # Corrección clave para evitar el AttributeError en Streamlit
     contenido = file_upload.getvalue().decode("utf-8")
     registros = []
     
     for linea in contenido.splitlines():
-        # Limpiar espacios extraños (como \xa0) y quitar el punto final
         linea_limpia = linea.replace('\xa0', ' ').strip().rstrip('.')
         if not linea_limpia or "UDISKLOG" in linea_limpia or "DateTime" in linea_limpia or "Mchn" in linea_limpia:
             continue
             
         partes = linea_limpia.split()
-        if len(partes) < 7:
+        if len(partes) < 5:
             continue
             
         try:
-            # En tu formato, el legajo limpio está en la tercera columna (índice 2)
-            # Ejemplo: '000000010' se convierte automáticamente en el entero 10
+            # Extraer número de legajo de manera limpia
             legajo = int(partes[2])
             
-            # La fecha y hora están al final de la línea debido a la separación por espacios
-            fecha_str = partes[-2]  # Ejemplo: '2026/05/01'
-            hora_str = partes[-1]   # Ejemplo: '07:00:00'
+            # Buscar índices correctos para fecha y hora en la línea
+            fecha_str = partes[-2]  
+            hora_str = partes[-1]   
             
-            # Conversión estricta a tipos de datos nativos
             fecha_dt = pd.to_datetime(fecha_str, format='%Y/%m/%d').date()
             hora_dt = pd.to_datetime(hora_str, format='%H:%M:%S').time()
             
@@ -186,12 +178,12 @@ def parsear_prosoft_txt(file_upload):
                 'es_feriado': es_feriado
             })
         except Exception:
-            # Ignora líneas de encabezados residuales o con datos corruptos
             continue
                 
     return pd.DataFrame(registros)
+
 # =========================================================================
-# SECCIÓN 1: EMPLEADOS (AGREGAR / EDITAR)
+# SECCIÓN 1: EMPLEADOS
 # =========================================================================
 if seccion == "👥 Empleados":
     st.header("👥 Administración de Personal")
@@ -208,7 +200,6 @@ if seccion == "👥 Empleados":
                     st.error("El nombre no puede estar vacío.")
                 else:
                     df_emp = st.session_state['empleados']
-                    # Si el legajo ya existe, se elimina la versión previa para actualizarlo
                     df_emp = df_emp[df_emp['legajo'] != legajo_input]
                     
                     nueva_linea = pd.DataFrame([{'legajo': int(legajo_input), 'nombre': nombre_input.strip(), 'puesto': puesto_input.strip()}])
@@ -220,7 +211,7 @@ if seccion == "👥 Empleados":
     st.dataframe(st.session_state['empleados'].sort_values('legajo'), use_container_width=True, hide_index=True)
 
 # =========================================================================
-# SECCIÓN 2: CALENDARIO DE OFICINA (DOBLE COLOR + FERIADOS DE CONTROL)
+# SECCIÓN 2: CALENDARIO DE TURNOS
 # =========================================================================
 elif seccion == "📅 CALENDARIO":
     st.header("📅 Calendario Mensual de Turnos")
@@ -231,14 +222,12 @@ elif seccion == "📅 CALENDARIO":
     anio_sel = col_c1.selectbox("Año:", [2026, 2027, 2025], index=0)
     mes_sel = col_c2.selectbox("Mes:", list(range(1, 13)), index=datetime.date.today().month - 1)
     
-    # Procesar turnos por día si hay marcas cargadas
     marcas_del_mes = {}
     if not df_fichajes.empty:
         df_fichajes['fecha_dt'] = pd.to_datetime(df_fichajes['fecha'])
         df_mes = df_fichajes[(df_fichajes['fecha_dt'].dt.year == anio_sel) & (df_fichajes['fecha_dt'].dt.month == mes_sel)]
         
         if not df_mes.empty:
-            # Entrada es la hora mínima del empleado en el día
             entradas = df_mes.groupby(['fecha', 'legajo'])['hora'].min().reset_index()
             df_nombres = st.session_state['empleados']
             entradas = pd.merge(entradas, df_nombres, on='legajo', how='left')
@@ -248,7 +237,6 @@ elif seccion == "📅 CALENDARIO":
                 nombre_emp = row['nombre'] if pd.notna(row['nombre']) else f"Legajo {row['legajo']}"
                 hora_entrada = row['hora'].time()
                 
-                # Clasificación de color por horario de entrada solicitado
                 if 7 <= hora_entrada.hour < 11:
                     tipo_turno = "manana"
                 else:
@@ -260,8 +248,7 @@ elif seccion == "📅 CALENDARIO":
                     marcas_del_mes[dia] = []
                 marcas_del_mes[dia].append({'nombre': nombre_emp, 'turno': tipo_turno, 'feriado': es_fer})
 
-    # Renderizador del calendario estructural cuadrado
-    cal = calendar.Calendar(firstweekday=6) # Comienza en Domingo
+    cal = calendar.Calendar(firstweekday=6)
     mes_matriz = cal.monthdatescalendar(anio_sel, mes_sel)
     
     dias_semana = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
@@ -275,7 +262,6 @@ elif seccion == "📅 CALENDARIO":
             if el_dia.month == mes_sel:
                 html_contenido = f"<div class='calendar-box'><div class='day-number'>{el_dia.day}</div>"
                 
-                # Si el día es feriado, agregar indicador visual general
                 if el_dia in st.session_state['feriados']:
                     html_contenido += f"<span class='badge-feriado'>Feriado</span>"
                 
@@ -294,10 +280,10 @@ elif seccion == "📅 CALENDARIO":
                 cols_semana[i].markdown("<div style='border: 1px solid #F0F0F0; min-height: 110px;'></div>", unsafe_allow_html=True)
 
 # =========================================================================
-# SECCIÓN 3: GESTIÓN DE HORAS NETAS Y FILTRO ESPECÍFICO
+# SECCIÓN 3: GESTIÓN DE HORAS
 # =========================================================================
 elif seccion == "📊 GESTION HORAS":
-    st.header("📊 Resumen Diario Límpio y Horas Acumuladas")
+    st.header("📊 Resumen Diario Limpio y Horas Acumuladas")
     
     df_fichajes = st.session_state['fichajes_raw']
     
@@ -308,14 +294,12 @@ elif seccion == "📊 GESTION HORAS":
         f_inicio = col_f1.date_input("Fecha Inicial de Cálculo:", value=df_fichajes['fecha'].min())
         f_fin = col_f2.date_input("Fecha Final de Cálculo:", value=df_fichajes['fecha'].max())
         
-        # Filtro opcional por legajo específico
         opciones_emp = {0: "TODOS LOS EMPLEADOS"}
         for _, r in st.session_state['empleados'].iterrows():
             opciones_emp[r['legajo']] = f"Legajo {r['legajo']} - {r['nombre']}"
             
         legajo_sel = col_f3.selectbox("Filtrar por Empleado Específico:", options=list(opciones_emp.keys()), format_func=lambda x: opciones_emp[x])
 
-        # Filtrar datos por el rango temporal
         mask = (df_fichajes['fecha'] >= f_inicio) & (df_fichajes['fecha'] <= f_fin)
         df_filtrado = df_fichajes[mask]
         
@@ -325,15 +309,12 @@ elif seccion == "📊 GESTION HORAS":
         if df_filtrado.empty:
             st.info("Sin registros para los filtros seleccionados.")
         else:
-            # Agrupar por empleado y día para obtener el cálculo limpio (Max - Min)
             agrupado = df_filtrado.groupby(['legajo', 'fecha'])['hora'].agg(['min', 'max']).reset_index()
             agrupado['horas_num'] = (agrupado['max'] - agrupado['min']).dt.total_seconds() / 3600
             
-            # Incorporar nombres y feriados
             agrupado = pd.merge(agrupado, st.session_state['empleados'], on='legajo', how='left')
             agrupado['es_feriado'] = agrupado['fecha'].apply(lambda x: x in st.session_state['feriados'])
             
-            # Formatear salida estructurada limpia
             lineas_reporte = []
             for _, row in agrupado.iterrows():
                 nom_final = row['nombre'] if pd.notna(row['nombre']) else f"Desconocido (Leg. {row['legajo']})"
@@ -354,15 +335,13 @@ elif seccion == "📊 GESTION HORAS":
                 
             df_reporte_limpio = pd.DataFrame(lineas_reporte)
             
-            # Indicadores numéricos grandes en pantalla
             total_horas_periodo = df_reporte_limpio['horas_valor'].sum()
-            st.markdown(f"<div style='background-color:#1E381F; padding:20px; border-radius:10px; margin-bottom:25px; text-align:center;'>"
+            st.markdown(f"<div style='background-color:#1E381F; padding:20px; border-radius:10px; margin-bottom:25px; text-align:center;'> "
                         f"<h1 style='color:white; margin:0;'>TOTAL ACUMULADO: {round(total_horas_periodo, 1)} Horas</h1>"
                         f"</div>", unsafe_allow_html=True)
             
             st.subheader("📋 Vista de Marcas en Limpio")
             
-            # Mostrar tabla con color azul destacado para registros de feriados
             def destacar_feriados(row):
                 return ['background-color: #CCE5FF; color: #004085; font-weight: bold;' if row['Detalle Extra'] != '' else '' for _ in row]
                 
@@ -371,12 +350,9 @@ elif seccion == "📊 GESTION HORAS":
 # =========================================================================
 # SECCIÓN 4: RECEPTOR DE ARCHIVOS
 # =========================================================================
-# =========================================================================
-# SECCIÓN 4: RECEPTOR DE ARCHIVOS Y COMPARTIDO AUTOMÁTICO A GOOGLE SHEETS
-# =========================================================================
 elif seccion == "📥 CARGAR ARCHIVO":
     st.header("📥 Carga de Archivos de Fichajes (Prosoft)")
-    st.markdown("Subí el reporte generado por el reloj para actualizar el sistema y sincronizar con Google Sheets.")
+    st.markdown("Subí el reporte generado por el reloj para actualizar el sistema de manera inmediata.")
     
     file_upload = st.file_uploader("Seleccionar archivo .txt:", type=["txt"])
     
@@ -385,40 +361,11 @@ elif seccion == "📥 CARGAR ARCHIVO":
         
         if not df_nuevos_datos.empty:
             st.session_state['fichajes_raw'] = df_nuevos_datos
-            st.success(f"¡Sincronización interna completada! Se leyeron {len(df_nuevos_datos)} marcas.")
+            st.success(f"¡Sincronización interna completada! Se leyeron exitosamente {len(df_nuevos_datos)} marcas horarias.")
             
-            # --- MOTOR DE CARGA AUTOMÁTICA A GOOGLE SHEETS ---
-            st.info("🔄 Subiendo datos procesados a la pestaña 'reportes' de Google Sheets...")
-            try:
-                from streamlit_gsheets import GSheetsConnection
-                
-                # Conectar usando el secreto del sistema
-                conn = st.connection("gsheets", type=GSheetsConnection)
-                
-                # 1. Preparar el cálculo neto diario igual que en la pestaña de gestión para subirlo limpio
-                df_calculado = df_nuevos_datos.groupby(['legajo', 'fecha'])['hora'].agg(['min', 'max']).reset_index()
-                df_calculado['tiempo_trabajado'] = ((df_calculado['max'] - df_calculado['min']).dt.total_seconds() / 3600).round(2)
-                
-                # Formatemos las columnas para que coincidan con tu Excel
-                df_para_sheets = pd.DataFrame({
-                    'id': range(1, len(df_calculado) + 1),
-                    'legajo': df_calculado['legajo'],
-                    'fecha': df_calculado['fecha'].astype(str),
-                    'entrada': df_calculado['min'].dt.strftime('%H:%M:%S'),
-                    'salida': df_calculado['max'].dt.strftime('%H:%M:%S'),
-                    'tiempo_trabajado': df_calculado['tiempo_trabajado'],
-                    'tipo_dia': df_calculado['fecha'].apply(lambda x: 'Feriado' if x in st.session_state['feriados'] else 'Normal')
-                })
-                
-                # 2. Guardar datos directamente en la pestaña "reportes"
-                conn.update(worksheet="reportes", data=df_para_sheets)
-                st.success("✨ ¡Sincronización Exitosa! Los datos ya están guardados en tu Google Sheets.")
-                
-            except Exception as e:
-                st.error(f"No se pudo automatizar la subida a Sheets. Error: {e}")
-                st.info("Asegurate de tener instalada la librería 'streamlit-google-sheets-connection' en tu archivo requirements.txt")
-            
-            # Mostrar resumen de control en pantalla
-            st.dataframe(df_nuevos_datos, use_container_width=True, hide_index=True)
+            # Formatear visualización de control en pantalla
+            df_mostrar = df_nuevos_datos.copy()
+            df_mostrar['hora'] = df_mostrar['hora'].dt.strftime('%H:%M:%S')
+            st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
         else:
             st.error("El formato del archivo no contiene registros legibles de legajos y tiempos.")
