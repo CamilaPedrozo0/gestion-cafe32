@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta, date
 import re
 
-# --- CONFIGURACIÓN DE LA APP (TEMA OCURO / LIMPIO) ---
+# --- CONFIGURACIÓN DE LA APP (TEMA OSCURO / LIMPIO) ---
 st.set_page_config(page_title="Gestión Horas Café 32", page_icon="☕", layout="wide")
 
 # --- LIMPIEZA VISUAL DE INTERFAZ (CSS MINIMALISTA) ---
@@ -19,11 +19,9 @@ st.markdown("""
 # --- CONFIGURACIÓN DE BASE DE DATOS EN LA BARRA LATERAL ---
 st.sidebar.markdown("### ⚙️ Conexión segura")
 
-# ID por defecto corregido de tu captura
 id_defecto = "1veKrncoLJmYwXXrNeODVembeiXT9oL9nm9le-r1ZpRg"
 url_ingresada = st.sidebar.text_input("Enlace de tu Google Sheets:", value=id_defecto, help="Podés pegar el link completo o solo el ID.")
 
-# Procesador inteligente de URL para que no rompa el diseño
 def extraer_id_sheets(texto):
     if "docs.google.com/spreadsheets" in texto:
         match = re.search(r'/d/([^/]+)', texto)
@@ -199,7 +197,8 @@ elif menu == "📤 Procesar Disco USB":
                 linea = linea.strip()
                 if not linea: continue
                 
-                match_fecha = re.search(r'(\d{1,2})[/--](\d{1,2})[/--](\d{4})', linea)
+                # REPARACIÓN AQUÍ: Se eliminó el guion doble problemático
+                match_fecha = re.search(r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', linea)
                 match_hora = re.search(r'(\d{1,2}):(\d{2}):(\d{2})', linea)
                 
                 if match_fecha and match_hora:
@@ -249,7 +248,7 @@ elif menu == "📤 Procesar Disco USB":
                     if id_sheets:
                         st.link_button("🚀 Abrir Base de Datos 'gestion horas cafe32'", f"https://docs.google.com/spreadsheets/d/{id_sheets}")
             else:
-                st.error("El formato de las líneas del archivo .txt no es válido.")
+                st.error("No se encontraron marcas válidas en el archivo .txt.")
         except Exception as e:
             st.error(f"Error al interpretar archivo: {e}")
 
