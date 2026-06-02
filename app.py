@@ -371,9 +371,12 @@ elif seccion == "📊 GESTION HORAS":
 # =========================================================================
 # SECCIÓN 4: RECEPTOR DE ARCHIVOS
 # =========================================================================
+# =========================================================================
+# SECCIÓN 4: RECEPTOR DE ARCHIVOS Y COMPARTIDO AUTOMÁTICO A GOOGLE SHEETS
+# =========================================================================
 elif seccion == "📥 CARGAR ARCHIVO":
     st.header("📥 Carga de Archivos de Fichajes (Prosoft)")
-    st.markdown("Subí el reporte generado por el reloj para actualizar el sistema.")
+    st.markdown("Subí el reporte generado por el reloj para actualizar el sistema y sincronizar con Google Sheets.")
     
     file_upload = st.file_uploader("Seleccionar archivo .txt:", type=["txt"])
     
@@ -382,10 +385,40 @@ elif seccion == "📥 CARGAR ARCHIVO":
         
         if not df_nuevos_datos.empty:
             st.session_state['fichajes_raw'] = df_nuevos_datos
-            st.success(f"¡Sincronización completada! Se leyeron {len(df_nuevos_datos)} marcas correctamente.")
+            st.success(f"¡Sincronización interna completada! Se leyeron {len(df_nuevos_datos)} marcas.")
             
-            # Simulación de subida/conexión directa a Google Sheets
-            st.info("🔄 Datos listos para reflejar en el servidor de Google Sheets vinculado.")
+            # --- MOTOR DE CARGA AUTOMÁTICA A GOOGLE SHEETS ---
+            st.info("🔄 Subiendo datos procesados a la pestaña 'reportes' de Google Sheets...")
+            try:
+                from streamlit_gsheets import GSheetsConnection
+                
+                # Conectar usando el secreto del sistema
+                conn = st.connection("gsheets", type=GSheetsConnection)
+                
+                # 1. Preparar el cálculo neto diario igual que en la pestaña de gestión para subirlo limpio
+                df_calculado = df_nuevos_datos.groupby(['legajo', 'fecha'])['hora'].agg(['min', 'max']).reset_index()
+                df_calculado['tiempo_trabajado'] = ((df_calculado['max'] - df_calculado['min']).dt.total_seconds() / 3600).round(2)
+                
+                # Formatemos las columnas para que coincidan con tu Excel
+                df_para_sheets = pd.DataFrame({
+                    'id': range(1, len(df_calculado) + 1),
+                    'legajo': df_calculado['legajo'],
+                    'fecha': df_calculado['fecha'].astype(str),
+                    'entrada': df_calculado['min'].dt.strftime('%H:%M:%S'),
+                    'salida': df_calculado['max'].dt.strftime('%H:%M:%S'),
+                    'tiempo_trabajado': df_calculado['tiempo_trabajado'],
+                    'tipo_dia': df_calculado['fecha'].apply(lambda x: 'Feriado' if x in st.session_state['feriados'] else 'Normal')
+                })
+                
+                # 2. Guardar datos directamente en la pestaña "reportes"
+                conn.update(worksheet="reportes", data=df_para_sheets)
+                st.success("✨ ¡Sincronización Exitosa! Los datos ya están guardados en tu Google Sheets.")
+                
+            except Exception as e:
+                st.error(f"No se pudo automatizar la subida a Sheets. Error: {e}")
+                st.info("Asegurate de tener instalada la librería 'streamlit-google-sheets-connection' en tu archivo requirements.txt")
+            
+            # Mostrar resumen de control en pantalla
             st.dataframe(df_nuevos_datos, use_container_width=True, hide_index=True)
         else:
             st.error("El formato del archivo no contiene registros legibles de legajos y tiempos.")
