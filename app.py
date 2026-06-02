@@ -4,7 +4,7 @@ import datetime
 import calendar
 
 # =========================================================================
-# CONFIGURACIÓN DE PÁGINA Y ESTILOS (Color institucional #1E381F)
+# CONFIGURACIÓN DE PAGINA (Color #1E381F)
 # =========================================================================
 st.set_page_config(page_title="Gestión Horas - Café 32", layout="wide", page_icon="☕")
 
@@ -71,7 +71,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================================================================
-# INICIALIZACIÓN DE VARIABLES DE SESIÓN (PERSISTENCIA)
+# VARIABLES DE SESIÓN (PERSISTENCIA)
 # =========================================================================
 if 'autenticado' not in st.session_state:
     st.session_state['autenticado'] = False
@@ -107,7 +107,7 @@ if 'feriados' not in st.session_state:
     ]
 
 # =========================================================================
-# PANTALLA DE ACCESO (LOGIN OBLIGATORIO)
+#  (LOGIN OBLIGATORIO)
 # =========================================================================
 if not st.session_state['autenticado']:
     col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
