@@ -83,12 +83,12 @@ if 'empleados' not in st.session_state:
         {'legajo': 3, 'nombre': 'Joel', 'puesto': 'Panadero'},
         {'legajo': 4, 'nombre': 'Ariana', 'puesto': 'Moza'},
         {'legajo': 5, 'nombre': 'Axel', 'puesto': 'Barista'},
-        {'legajo': 6, 'nombre': 'Valentin', 'puesto': 'Cocinero'},
         {'legajo': 7, 'nombre': 'Pepi', 'puesto': 'Cocinero'},
         {'legajo': 8, 'nombre': 'Israel', 'puesto': 'Mozo'},
         {'legajo': 9, 'nombre': 'Lucia', 'puesto': 'Moza'},
         {'legajo': 10, 'nombre': 'Priscila', 'puesto': 'Moza'},
         {'legajo': 11, 'nombre': 'Candela', 'puesto': 'Moza'},
+         {'legajo': 12, 'nombre': 'Agustina', 'puesto': 'Cocinero'},
         {'legajo': 13, 'nombre': 'Valentina', 'puesto': 'Pastelera'}
     ])
 
