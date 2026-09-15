@@ -23,7 +23,7 @@ st.markdown("""
             color: white;
             border-radius: 6px;
         }
-        /* Estilos para el calendario estilo oficina */
+        /* Estilos para el calendario  */
         .calendar-box {
             border: 1px solid #E0E0E0;
             padding: 8px;
@@ -89,7 +89,8 @@ if 'empleados' not in st.session_state:
         {'legajo': 10, 'nombre': 'Priscila', 'puesto': 'Moza'},
         {'legajo': 11, 'nombre': 'Candela', 'puesto': 'Moza'},
          {'legajo': 12, 'nombre': 'Agustina', 'puesto': 'Cocinero'},
-        {'legajo': 13, 'nombre': 'Valentina', 'puesto': 'Pastelera'}
+        {'legajo': 13, 'nombre': 'Valentina', 'puesto': 'Pastelera'},
+        {'legajo': 14, 'nombre': 'Melania', 'puesto': 'Moza'},
     ])
 
 if 'fichajes_raw' not in st.session_state:
