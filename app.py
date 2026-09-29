@@ -211,6 +211,37 @@ if seccion == "👥 Empleados":
     st.markdown("### Nómina Guardada en el Sistema")
     st.dataframe(st.session_state['empleados'].sort_values('legajo'), use_container_width=True, hide_index=True)
 
+    # APARTADO EXCLUSIVO PARA CAMILA
+    st.markdown("---")
+    st.subheader("☕ Reporte Exclusivo de Asistencia: Camila")
+    df_fich_all = st.session_state['fichajes_raw']
+    df_emp_all = st.session_state['empleados']
+    
+    # Buscar el legajo de Camila (puede estar escrito de varias formas, buscamos case-insensitive)
+    camila_row = df_emp_all[df_emp_all['nombre'].str.lower() == 'camila']
+    
+    if camila_row.empty:
+        st.info("No se encontró un empleado registrado con el nombre 'Camila'.")
+    elif df_fich_all.empty:
+        st.info("Aún no hay registros de fichajes cargados en el sistema.")
+    else:
+        legajo_camila = camila_row.iloc[0]['legajo']
+        df_camila = df_fich_all[df_fich_all['legajo'] == legajo_camila].copy()
+        
+        if df_camila.empty:
+            st.info("Camila no registra marcaciones en los archivos cargados.")
+        else:
+            # Ordenar por fecha y hora
+            df_camila = df_camila.sort_values('hora')
+            # Formatear salida para mostrar fecha y hora de cada marcación única
+            df_camila_mostrar = df_camila[['fecha', 'hora']].copy()
+            df_camila_mostrar['Fecha'] = pd.to_datetime(df_camila_mostrar['fecha']).dt.strftime('%d/%m/%Y')
+            df_camila_mostrar['Hora de Marcación'] = pd.to_datetime(df_camila_mostrar['hora']).dt.strftime('%H:%M:%S')
+            df_camila_mostrar = df_camila_mostrar[['Fecha', 'Hora de Marcación']].reset_index(drop=True)
+            
+            st.markdown(f"**Registros individuales de marcación (Legajo {legajo_camila}):**")
+            st.dataframe(df_camila_mostrar, use_container_width=True, hide_index=True)
+
 # =========================================================================
 # SECCIÓN 2: CALENDARIO DE TURNOS
 # =========================================================================
@@ -310,28 +341,55 @@ elif seccion == "📊 GESTION HORAS":
         if df_filtrado.empty:
             st.info("Sin registros para los filtros seleccionados.")
         else:
-            agrupado = df_filtrado.groupby(['legajo', 'fecha'])['hora'].agg(['min', 'max']).reset_index()
-            agrupado['horas_num'] = (agrupado['max'] - agrupado['min']).dt.total_seconds() / 3600
-            
-            agrupado = pd.merge(agrupado, st.session_state['empleados'], on='legajo', how='left')
-            agrupado['es_feriado'] = agrupado['fecha'].apply(lambda x: x in st.session_state['feriados'])
-            
+            # Lógica para manejar horario cortado o múltiples fichajes por día por empleado
             lineas_reporte = []
-            for _, row in agrupado.iterrows():
-                nom_final = row['nombre'] if pd.notna(row['nombre']) else f"Desconocido (Leg. {row['legajo']})"
-                f_str = row['fecha'].strftime('%d/%m')
-                e_str = row['min'].strftime('%H:%M')
-                s_str = row['max'].strftime('%H:%M')
-                h_netas = round(row['horas_num'], 1)
+            
+            # Agrupar por empleado y fecha
+            for (legajo, fecha), grupo in df_filtrado.groupby(['legajo', 'fecha']):
+                # Ordenar cronológicamente las marcas del día
+                grupo_ordenado = grupo.sort_values('hora').reset_index(drop=True)
                 
-                txt_feriado = " [FERIADO TRABAJADO]" if row['es_feriado'] else ""
+                rangos_str = []
+                horas_totales_dia = 0.0
+                
+                # Procesar en pares (Entrada - Salida) para soportar turno cortado
+                i = 0
+                while i < len(grupo_ordenado) - 1:
+                    t_in = grupo_ordenado.loc[i, 'hora']
+                    t_out = grupo_ordenado.loc[i+1, 'hora']
+                    
+                    duracion_bloque = (t_out - t_in).total_seconds() / 3600
+                    if duracion_bloque > 0:
+                        horas_totales_dia += duracion_bloque
+                        rangos_str.append(f"{t_in.strftime('%H:%M')} a {t_out.strftime('%H:%M')}")
+                    i += 2
+                
+                # Si queda una marcación impar suelta
+                if i < len(grupo_ordenado):
+                    t_in = grupo_ordenado.loc[i, 'hora']
+                    rangos_str.append(f"{t_in.strftime('%H:%M')} (Sin par)")
+
+                # Buscar datos del empleado
+                info_emp = st.session_state['empleados'][st.session_state['empleados']['legajo'] == legajo]
+                if not info_emp.empty:
+                    nom_final = info_emp.iloc[0]['nombre']
+                else:
+                    nom_final = f"Desconocido (Leg. {legajo})"
+                
+                f_str = fecha.strftime('%d/%m')
+                rango_horario_completo = " y ".join(rangos_str) if rangos_str else "Sin registrar"
+                h_netas = round(horas_totales_dia, 1)
+                
+                es_fer = fecha in st.session_state['feriados']
+                txt_feriado = " [FERIADO TRABAJADO]" if es_fer else ""
+                
                 lineas_reporte.append({
                     'Empleado': nom_final,
                     'Día': f_str,
-                    'Rango Horario': f"{e_str} a {s_str}",
+                    'Rango Horario': rango_horario_completo,
                     'Horas Calculadas': f"{h_netas} h",
                     'Detalle Extra': txt_feriado,
-                    'horas_valor': row['horas_num']
+                    'horas_valor': horas_totales_dia
                 })
                 
             df_reporte_limpio = pd.DataFrame(lineas_reporte)
