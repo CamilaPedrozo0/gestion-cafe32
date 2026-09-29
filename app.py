@@ -217,7 +217,6 @@ if seccion == "👥 Empleados":
     df_fich_all = st.session_state['fichajes_raw']
     df_emp_all = st.session_state['empleados']
     
-    # Buscar el legajo de Camila (puede estar escrito de varias formas, buscamos case-insensitive)
     camila_row = df_emp_all[df_emp_all['nombre'].str.lower() == 'camila']
     
     if camila_row.empty:
@@ -231,9 +230,17 @@ if seccion == "👥 Empleados":
         if df_camila.empty:
             st.info("Camila no registra marcaciones en los archivos cargados.")
         else:
+            # Como Camila ficha solo 1 vez por turno, contamos la cantidad de días únicos registrados
+            df_camila['fecha_dt'] = pd.to_datetime(df_camila['fecha'])
+            dias_unicos = df_camila['fecha_dt'].dt.date.nunique()
+            
+            # Tarjeta de total de días
+            st.markdown(f"<div style='background-color:#1E381F; padding:15px; border-radius:10px; margin-bottom:20px; text-align:center;'>"
+                        f"<h2 style='color:white; margin:0;'>TOTAL ACUMULADO: {dias_unicos} DÍAS</h2>"
+                        f"</div>", unsafe_allow_html=True)
+            
             # Ordenar por fecha y hora
             df_camila = df_camila.sort_values('hora')
-            # Formatear salida para mostrar fecha y hora de cada marcación única
             df_camila_mostrar = df_camila[['fecha', 'hora']].copy()
             df_camila_mostrar['Fecha'] = pd.to_datetime(df_camila_mostrar['fecha']).dt.strftime('%d/%m/%Y')
             df_camila_mostrar['Hora de Marcación'] = pd.to_datetime(df_camila_mostrar['hora']).dt.strftime('%H:%M:%S')
@@ -341,18 +348,14 @@ elif seccion == "📊 GESTION HORAS":
         if df_filtrado.empty:
             st.info("Sin registros para los filtros seleccionados.")
         else:
-            # Lógica para manejar horario cortado o múltiples fichajes por día por empleado
             lineas_reporte = []
             
-            # Agrupar por empleado y fecha
             for (legajo, fecha), grupo in df_filtrado.groupby(['legajo', 'fecha']):
-                # Ordenar cronológicamente las marcas del día
                 grupo_ordenado = grupo.sort_values('hora').reset_index(drop=True)
                 
                 rangos_str = []
                 horas_totales_dia = 0.0
                 
-                # Procesar en pares (Entrada - Salida) para soportar turno cortado
                 i = 0
                 while i < len(grupo_ordenado) - 1:
                     t_in = grupo_ordenado.loc[i, 'hora']
@@ -364,12 +367,10 @@ elif seccion == "📊 GESTION HORAS":
                         rangos_str.append(f"{t_in.strftime('%H:%M')} a {t_out.strftime('%H:%M')}")
                     i += 2
                 
-                # Si queda una marcación impar suelta
                 if i < len(grupo_ordenado):
                     t_in = grupo_ordenado.loc[i, 'hora']
                     rangos_str.append(f"{t_in.strftime('%H:%M')} (Sin par)")
 
-                # Buscar datos del empleado
                 info_emp = st.session_state['empleados'][st.session_state['empleados']['legajo'] == legajo]
                 if not info_emp.empty:
                     nom_final = info_emp.iloc[0]['nombre']
@@ -422,7 +423,6 @@ elif seccion == "📥 CARGAR ARCHIVO":
             st.session_state['fichajes_raw'] = df_nuevos_datos
             st.success(f"¡Sincronización interna completada! Se leyeron exitosamente {len(df_nuevos_datos)} marcas horarias.")
             
-            # Formatear visualización de control en pantalla
             df_mostrar = df_nuevos_datos.copy()
             df_mostrar['hora'] = df_mostrar['hora'].dt.strftime('%H:%M:%S')
             st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
