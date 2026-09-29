@@ -105,7 +105,7 @@ if 'feriados' not in st.session_state:
         datetime.date(2026, 5, 25),  # Revolución de Mayo
         datetime.date(2026, 6, 20),  # Día de la Bandera
         datetime.date(2026, 7, 9)    # Independencia
-        datetime.date(2026, 9,28)    # Dia del empleado de comercio
+       # datetime.date(2026, 9,28)    # Dia del empleado de comercio
 
     ]
 
