@@ -88,7 +88,7 @@ if 'empleados' not in st.session_state:
         {'legajo': 9, 'nombre': 'Lucia', 'puesto': 'Moza'},
         {'legajo': 10, 'nombre': 'Priscila', 'puesto': 'Moza'},
         {'legajo': 11, 'nombre': 'Candela', 'puesto': 'Moza'},
-         {'legajo': 12, 'nombre': 'Agustina', 'puesto': 'Cocinero'},
+        {'legajo': 12, 'nombre': 'Agustina', 'puesto': 'Cocinero'},
         {'legajo': 13, 'nombre': 'Valentina', 'puesto': 'Pastelera'},
         {'legajo': 14, 'nombre': 'Melania', 'puesto': 'Moza'},
     ])
@@ -104,13 +104,12 @@ if 'feriados' not in st.session_state:
         datetime.date(2026, 5, 1),   # Día del Trabajo
         datetime.date(2026, 5, 25),  # Revolución de Mayo
         datetime.date(2026, 6, 20),  # Día de la Bandera
-        datetime.date(2026, 7, 9)    # Independencia
-       # datetime.date(2026, 9,28)    # Dia del empleado de comercio
-
+        datetime.date(2026, 7, 9),   # Independencia
+        datetime.date(2026, 9, 28)   # Día del Empleado de Comercio
     ]
 
 # =========================================================================
-#  (LOGIN OBLIGATORIO)
+# LOGIN OBLIGATORIO
 # =========================================================================
 if not st.session_state['autenticado']:
     col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
@@ -162,10 +161,7 @@ def parsear_prosoft_txt(file_upload):
             continue
             
         try:
-            # Extraer número de legajo de manera limpia
             legajo = int(partes[2])
-            
-            # Buscar índices correctos para fecha y hora en la línea
             fecha_str = partes[-2]  
             hora_str = partes[-1]   
             
@@ -213,37 +209,7 @@ if seccion == "👥 Empleados":
     st.markdown("### Nómina Guardada en el Sistema")
     st.dataframe(st.session_state['empleados'].sort_values('legajo'), use_container_width=True, hide_index=True)
 
-# =========================================================================
-# SECCIÓN 1: EMPLEADOS
-# =========================================================================
-elif seccion == "👥 Empleados":
-    st.header("👥 Administración de Personal")
-    
-    with st.expander("➕ Registrar o Editar Empleado desde la App", expanded=False):
-        with st.form("form_empleado"):
-            legajo_input = st.number_input("Número de Legajo (ID Reloj):", min_value=1, step=1)
-            nombre_input = st.text_input("Nombre Completo:")
-            puesto_input = st.text_input("Puesto / Función:")
-            btn_guardar = st.form_submit_button("Guardar Datos")
-            
-            if btn_guardar:
-                if not nombre_input.strip():
-                    st.error("El nombre no puede estar vacío.")
-                else:
-                    df_emp = st.session_state['empleados']
-                    df_emp = df_emp[df_emp['legajo'] != legajo_input]
-                    
-                    nueva_linea = pd.DataFrame([{'legajo': int(legajo_input), 'nombre': nombre_input.strip(), 'puesto': puesto_input.strip()}])
-                    st.session_state['empleados'] = pd.concat([df_emp, nueva_linea], ignore_index=True)
-                    st.success(f"Empleado Guardado: Legajo {legajo_input} - {nombre_input}")
-                    st.rerun()
-
-    st.markdown("### Nómina Guardada en el Sistema")
-    st.dataframe(st.session_state['empleados'].sort_values('legajo'), use_container_width=True, hide_index=True)
-
-    # =====================================================================
-    # CAMILA
-    # =====================================================================
+    # APARTADO EXCLUSIVO PARA CAMILA (Muestra DÍAS)
     st.markdown("---")
     st.subheader("☕ Reporte Exclusivo de Asistencia: Camila")
     df_fich_all = st.session_state['fichajes_raw']
@@ -259,7 +225,7 @@ elif seccion == "👥 Empleados":
         dias_totales = df_camila['fecha_dt'].nunique()
         
         st.markdown(f"<div style='background-color:#1E381F; padding:15px; border-radius:10px; margin-bottom:20px; text-align:center;'>"
-                    f"<h2 style='color:white; margin:0;'>TOTAL ACUMULADO: {dias_totales} DÍAS</h2>"
+                    f"<h2 style='color:white; margin:0;'>TOTAL ACUMULADO: {dias_totales} DIAS</h2>"
                     f"</div>", unsafe_allow_html=True)
         
         df_camila = df_camila.sort_values('hora')
@@ -361,7 +327,7 @@ elif seccion == "📊 GESTION HORAS":
             
         legajo_sel = col_f3.selectbox("Filtrar por Empleado Específico:", options=list(opciones_emp.keys()), format_func=lambda x: opciones_emp[x])
 
-        mask = (df_fichajes['fecha'] >= f_inicio) & (df_fichajes['fecha'] <= f_fin)
+        mask = (df_fichajes['fecha'] >= f_inicio) & (df_fischajes['fecha'] <= f_fin) if 'df_fischajes' in locals() else (df_fichajes['fecha'] >= f_inicio) & (df_fichajes['fecha'] <= f_fin)
         df_filtrado = df_fichajes[mask]
         
         if legajo_sel != 0:
