@@ -105,6 +105,8 @@ if 'feriados' not in st.session_state:
         datetime.date(2026, 5, 25),  # Revolución de Mayo
         datetime.date(2026, 6, 20),  # Día de la Bandera
         datetime.date(2026, 7, 9)    # Independencia
+        datetime.date(2026, 9,28)    # Dia del empleado de comercio
+
     ]
 
 # =========================================================================
@@ -211,43 +213,63 @@ if seccion == "👥 Empleados":
     st.markdown("### Nómina Guardada en el Sistema")
     st.dataframe(st.session_state['empleados'].sort_values('legajo'), use_container_width=True, hide_index=True)
 
-    # APARTADO EXCLUSIVO PARA CAMILA
+# =========================================================================
+# SECCIÓN 1: EMPLEADOS
+# =========================================================================
+elif seccion == "👥 Empleados":
+    st.header("👥 Administración de Personal")
+    
+    with st.expander("➕ Registrar o Editar Empleado desde la App", expanded=False):
+        with st.form("form_empleado"):
+            legajo_input = st.number_input("Número de Legajo (ID Reloj):", min_value=1, step=1)
+            nombre_input = st.text_input("Nombre Completo:")
+            puesto_input = st.text_input("Puesto / Función:")
+            btn_guardar = st.form_submit_button("Guardar Datos")
+            
+            if btn_guardar:
+                if not nombre_input.strip():
+                    st.error("El nombre no puede estar vacío.")
+                else:
+                    df_emp = st.session_state['empleados']
+                    df_emp = df_emp[df_emp['legajo'] != legajo_input]
+                    
+                    nueva_linea = pd.DataFrame([{'legajo': int(legajo_input), 'nombre': nombre_input.strip(), 'puesto': puesto_input.strip()}])
+                    st.session_state['empleados'] = pd.concat([df_emp, nueva_linea], ignore_index=True)
+                    st.success(f"Empleado Guardado: Legajo {legajo_input} - {nombre_input}")
+                    st.rerun()
+
+    st.markdown("### Nómina Guardada en el Sistema")
+    st.dataframe(st.session_state['empleados'].sort_values('legajo'), use_container_width=True, hide_index=True)
+
+    # =====================================================================
+    # CAMILA
+    # =====================================================================
     st.markdown("---")
     st.subheader("☕ Reporte Exclusivo de Asistencia: Camila")
     df_fich_all = st.session_state['fichajes_raw']
-    df_emp_all = st.session_state['empleados']
     
-    camila_row = df_emp_all[df_emp_all['nombre'].str.lower() == 'camila']
+    df_camila = df_fich_all[df_fich_all['legajo'] == 1].copy()
     
-    if camila_row.empty:
-        st.info("No se encontró un empleado registrado con el nombre 'Camila'.")
-    elif df_fich_all.empty:
+    if df_fich_all.empty:
         st.info("Aún no hay registros de fichajes cargados en el sistema.")
+    elif df_camila.empty:
+        st.info("Camila (Legajo 1) no registra marcaciones en los archivos cargados.")
     else:
-        legajo_camila = camila_row.iloc[0]['legajo']
-        df_camila = df_fich_all[df_fich_all['legajo'] == legajo_camila].copy()
+        df_camila['fecha_dt'] = pd.to_datetime(df_camila['fecha']).dt.date
+        dias_totales = df_camila['fecha_dt'].nunique()
         
-        if df_camila.empty:
-            st.info("Camila no registra marcaciones en los archivos cargados.")
-        else:
-            # Como Camila ficha solo 1 vez por turno, contamos la cantidad de días únicos registrados
-            df_camila['fecha_dt'] = pd.to_datetime(df_camila['fecha'])
-            dias_unicos = df_camila['fecha_dt'].dt.date.nunique()
-            
-            # Tarjeta de total de días
-            st.markdown(f"<div style='background-color:#1E381F; padding:15px; border-radius:10px; margin-bottom:20px; text-align:center;'>"
-                        f"<h2 style='color:white; margin:0;'>TOTAL ACUMULADO: {dias_unicos} DÍAS</h2>"
-                        f"</div>", unsafe_allow_html=True)
-            
-            # Ordenar por fecha y hora
-            df_camila = df_camila.sort_values('hora')
-            df_camila_mostrar = df_camila[['fecha', 'hora']].copy()
-            df_camila_mostrar['Fecha'] = pd.to_datetime(df_camila_mostrar['fecha']).dt.strftime('%d/%m/%Y')
-            df_camila_mostrar['Hora de Marcación'] = pd.to_datetime(df_camila_mostrar['hora']).dt.strftime('%H:%M:%S')
-            df_camila_mostrar = df_camila_mostrar[['Fecha', 'Hora de Marcación']].reset_index(drop=True)
-            
-            st.markdown(f"**Registros individuales de marcación (Legajo {legajo_camila}):**")
-            st.dataframe(df_camila_mostrar, use_container_width=True, hide_index=True)
+        st.markdown(f"<div style='background-color:#1E381F; padding:15px; border-radius:10px; margin-bottom:20px; text-align:center;'>"
+                    f"<h2 style='color:white; margin:0;'>TOTAL ACUMULADO: {dias_totales} DÍAS</h2>"
+                    f"</div>", unsafe_allow_html=True)
+        
+        df_camila = df_camila.sort_values('hora')
+        df_camila_mostrar = df_camila[['fecha', 'hora']].copy()
+        df_camila_mostrar['Fecha'] = pd.to_datetime(df_camila_mostrar['fecha']).dt.strftime('%d/%m/%Y')
+        df_camila_mostrar['Hora de Fichaje'] = pd.to_datetime(df_camila_mostrar['hora']).dt.strftime('%H:%M:%S')
+        df_camila_mostrar = df_camila_mostrar[['Fecha', 'Hora de Fichaje']].reset_index(drop=True)
+        
+        st.markdown(f"**Registros individuales de marcación (Legajo 1):**")
+        st.dataframe(df_camila_mostrar, use_container_width=True, hide_index=True)
 
 # =========================================================================
 # SECCIÓN 2: CALENDARIO DE TURNOS
